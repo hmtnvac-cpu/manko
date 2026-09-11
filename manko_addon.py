@@ -1,10 +1,10 @@
 from flask import jsonify, request
-import json
+import json,re
 
 MANIFEST={
- "id":"community.manko.addon","version":"1.2.0","name":"Manko",
+ "id":"community.manko.addon","version":"1.3.0","name":"Manko",
  "description":"Danh mục phim Manko đã Việt hóa cho Nuvio/Stremio",
- "resources":["catalog","meta","stream","subtitles"],"types":["movie"],"idPrefixes":["movie_manko_"],
+ "resources":["catalog","meta","stream"],"types":["movie"],"idPrefixes":["movie_manko_"],
  "catalogs":[{"type":"movie","id":"manko","name":"🎬 MANKO","extra":[{"name":"skip","isRequired":False},{"name":"search","isRequired":False}]}]
 }
 
@@ -18,26 +18,34 @@ def movie_title(i):
  m=i.get('metadata') or {}
  return clean_title(i.get('titleVi') or m.get('titleVi') or i.get('title'))
 
+def runtime_text(v):
+ s=str(v or '').strip()
+ if not s:return ''
+ m=re.search(r'(\d+)\s*(?:minutes?|mins?|min|phút)',s,re.I)
+ return f"{m.group(1)} phút" if m else s
+
 def meta_of(i):
  if not i:return None
  m=i.get('metadata') or {}
  desc=m.get('descriptionVi') or m.get('description') or ''
  out={"id":i.get('id'),"type":"movie","name":movie_title(i),"poster":i.get('poster') or None,"background":i.get('poster') or None,"posterShape":"poster","description":desc,"website":i.get('movieUrl') or None}
- genres=m.get('genresVi') or m.get('genres') or []
- if genres:out['genres']=genres
- if m.get('actors'):out['cast']=m['actors']
- if m.get('runtime'):out['runtime']=str(m['runtime'])
+ actors=m.get('actors') or []
+ if actors:out['cast']=actors
+ rt=runtime_text(m.get('runtime'))
+ if rt:out['runtime']=rt
  if m.get('year'):out['releaseInfo']=str(m['year'])
  elif m.get('releaseDate'):out['releaseInfo']=str(m['releaseDate'])
  details=[]
- for label,key in [('Mã phim','code'),('Ngày phát hành','releaseDate'),('Thời lượng','runtime'),('Hãng sản xuất','studio')]:
-  if m.get(key):details.append(f"{label}: {m[key]}")
+ if m.get('rating'):details.append(f"Đánh giá: {m['rating']} ⭐")
+ if rt:details.append(f"Thời lượng: {rt}")
+ if m.get('studio'):details.append(f"Hãng sản xuất: {m['studio']}")
+ if m.get('size'):details.append(f"Dung lượng: {m['size']}")
+ if m.get('releaseDate'):details.append(f"Ngày phát hành: {m['releaseDate']}")
  country=m.get('countryVi') or m.get('country')
  language=m.get('languageVi') or m.get('language')
  if country:details.append(f"Quốc gia: {country}")
  if language:details.append(f"Ngôn ngữ: {language}")
- if m.get('actors'):details.append('Diễn viên: '+', '.join(m['actors']))
- if genres:details.append('Thể loại: '+', '.join(genres))
+ if actors:details.append('Diễn viên: '+', '.join(actors))
  if details:out['description']=(out['description']+'\n\n' if out['description'] else '')+'\n'.join(details)
  return out
 
@@ -53,7 +61,7 @@ def register_manko_addon(app,load_store):
    try:p=json.loads(extra)
    except:pass
   q=str(p.get('search') or request.args.get('search') or '').lower();skip=int(p.get('skip',request.args.get('skip',0)) or 0)
-  if q:items=[x for x in items if q in f"{movie_title(x)} {(x.get('metadata') or {}).get('actors',[])} {(x.get('metadata') or {}).get('genresVi',[])}".lower()]
+  if q:items=[x for x in items if q in f"{movie_title(x)} {(x.get('metadata') or {}).get('actors',[])}".lower()]
   return jsonify({'metas':[meta_of(x) for x in items[skip:skip+40]]})
 
  @app.get('/meta/movie/<mid>.json')
@@ -72,12 +80,3 @@ def register_manko_addon(app,load_store):
    label=s.get('name') or f'#{n}'
    out.append({'name':label,'title':f"{movie_title(i)} • {label}",'url':s['url'],'behaviorHints':{'notWebReady':True,'proxyHeaders':{'request':h}}})
   return jsonify({'streams':out})
-
- @app.get('/subtitles/movie/<mid>.json')
- @app.get('/subtitles/movie/<mid>/<path:extra>.json')
- def subtitles(mid,extra=None):
-  i=(load_store().get('movies') or {}).get(mid)
-  if not i:return jsonify({'subtitles':[]})
-  url=i.get('subtitleVi') or (i.get('metadata') or {}).get('subtitleVi') or ''
-  if not str(url).startswith(('http://','https://')):return jsonify({'subtitles':[]})
-  return jsonify({'subtitles':[{'id':'vi','lang':'vie','url':url}]})
