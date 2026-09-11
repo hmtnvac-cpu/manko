@@ -1,1 +1,1 @@
-importScripts('service_worker.js','sync_restore.js');
+importScripts('service_worker.js');
