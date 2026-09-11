@@ -1,18 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Manko Full Collector",
-  "version": "3.5.3",
-  "description": "Stable result-first workers with full-site discovery in exact source page order.",
+  "name": "Manko Runner",
+  "version": "4.0.0",
+  "description": "Final server-driven Manko runner with bounded tabs, automatic cleanup, retries and server-controlled discovery.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
-    "https://healertanker.com/*",
-    "https://translate.googleapis.com/*",
     "https://manko-api.onrender.com/*"
   ],
-  "background": {"service_worker": "service_worker_main.js"},
-  "action": {"default_popup": "popup.html", "default_title": "Manko Full Collector"},
+  "background": {"service_worker": "runner_final.js"},
+  "action": {"default_title": "Manko Runner"},
   "content_scripts": [
     {"matches": ["https://manko.fun/movie-info/*"], "js": ["content_manko.js"], "run_at": "document_idle"},
     {"matches": ["https://javplayer.cc/e/*"], "js": ["content_javplayer.js"], "run_at": "document_idle"}
