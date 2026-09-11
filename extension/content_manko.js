@@ -21,32 +21,39 @@
       document.querySelector('img[src*="cover"]')?.src || '';
   }
 
-  function metaValue(labels) {
-    const wanted = labels.map(x=>x.toLowerCase());
-    for (const el of document.querySelectorAll('div,li,p,tr,dt')) {
-      const s = text(el), low=s.toLowerCase();
-      if (!wanted.some(x=>low.startsWith(x))) continue;
-      const colon=s.indexOf(':');
-      if(colon>=0) return s.slice(colon+1).trim();
-      if(el.nextElementSibling) return text(el.nextElementSibling);
+  function field(label) {
+    const wanted=label.toLowerCase();
+    for(const el of document.querySelectorAll('div,p,li,span')){
+      const s=text(el), low=s.toLowerCase();
+      if(!low.startsWith(wanted+':')) continue;
+      const value=s.slice(s.indexOf(':')+1).trim();
+      if(value && value.length<500) return value;
     }
     return '';
+  }
+
+  function actors() {
+    const raw=field('Actor') || field('Actors');
+    if(raw) return uniq(raw.split(',').map(x=>x.trim()));
+    return uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text));
   }
 
   function metadata() {
     const description = document.querySelector('meta[name="description"]')?.content ||
       text(document.querySelector('[class*="description"], [class*="synopsis"], [class*="overview"]'));
+    const runtimeRaw=field('Video Duration') || field('Duration') || field('Runtime');
+    const ratingRaw=field('Rating');
     return {
       description,
-      genres:uniq([...document.querySelectorAll('a[href*="genre"],a[href*="category"],a[href*="tag"]')].map(text)),
-      actors:uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text)),
-      code:metaValue(['code','movie code','品番']),
-      runtime:metaValue(['runtime','duration','length','収録時間']),
-      year:metaValue(['year','release year','発売年']),
-      releaseDate:metaValue(['release date','released','発売日']),
-      studio:metaValue(['studio','maker','label','メーカー']),
-      country:metaValue(['country','国']),
-      language:metaValue(['language','言語'])
+      actors:actors(),
+      code:field('Title'),
+      rating:ratingRaw,
+      runtime:runtimeRaw,
+      size:field('Size'),
+      releaseDate:field('Release date') || field('Release Date'),
+      studio:field('Maker') || field('Studio'),
+      country:'Japan',
+      language:'Japanese'
     };
   }
 
