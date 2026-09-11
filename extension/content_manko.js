@@ -43,6 +43,29 @@
     return uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text));
   }
 
+  function snapshotUrls(){
+    const out=[];
+    const add=src=>{try{const u=new URL(src,location.href);if(/^https?:$/.test(u.protocol))out.push(u.href)}catch{}};
+    const headings=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,p,span')].filter(el=>/^snapshots?$/i.test(text(el)));
+    for(const h of headings){
+      let box=h.parentElement;
+      for(let depth=0;box&&depth<4;depth++,box=box.parentElement){
+        const imgs=[...box.querySelectorAll('img')];
+        if(imgs.length>=2){
+          for(const img of imgs)add(img.currentSrc||img.src||img.getAttribute('data-src')||img.getAttribute('data-lazy-src'));
+          break;
+        }
+      }
+    }
+    for(const img of document.querySelectorAll('img')){
+      const src=img.currentSrc||img.src||img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||'';
+      const low=src.toLowerCase();
+      if(/snapshot|sample|scene|screenshot|thumb/.test(low))add(src);
+    }
+    const p=poster();
+    return uniq(out).filter(u=>u!==p).slice(0,24);
+  }
+
   function metadata() {
     const description = document.querySelector('meta[name="description"]')?.content ||
       text(document.querySelector('[class*="description"], [class*="synopsis"], [class*="overview"]'));
@@ -56,7 +79,8 @@
       releaseDate:field('Release date') || field('Release Date'),
       studio:field('Maker') || field('Studio'),
       country:'Japan',
-      language:'Japanese'
+      language:'Japanese',
+      snapshots:snapshotUrls()
     };
   }
 
