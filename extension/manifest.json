@@ -1,33 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Manko Stream Collector",
-  "version": "1.5.1",
-  "description": "Resolve Manko streams, collect full metadata, Vietnamese subtitle and keep Chrome storage as canonical data.",
-  "permissions": ["tabs", "storage", "downloads", "webRequest", "activeTab"],
+  "name": "Manko Demo Collector",
+  "version": "1.6.0",
+  "description": "Clean 20-movie Manko demo collector: Vietnamese metadata, multiple streams and one Vietnamese subtitle.",
+  "permissions": ["tabs", "storage"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
     "https://healertanker.com/*",
     "https://translate.googleapis.com/*",
-    "https://manko-api.onrender.com/*",
-    "https://film4k.net/*",
-    "https://*.film4k.net/*",
-    "https://fiml4k.fun/*",
-    "https://*.fiml4k.fun/*"
+    "https://manko-api.onrender.com/*"
   ],
   "background": {
     "service_worker": "service_worker_main.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Manko Stream Collector"
+    "default_title": "Manko Demo Collector"
   },
   "content_scripts": [
-    {
-      "matches": ["https://manko.fun/*"],
-      "js": ["content_manko_catalog.js"],
-      "run_at": "document_idle"
-    },
     {
       "matches": ["https://manko.fun/movie-info/*"],
       "js": ["content_manko.js"],
@@ -36,11 +27,6 @@
     {
       "matches": ["https://javplayer.cc/e/*"],
       "js": ["content_javplayer.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://film4k.net/watch/*"],
-      "js": ["content_film4k.js"],
       "run_at": "document_idle"
     }
   ]
