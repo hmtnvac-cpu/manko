@@ -4,7 +4,6 @@ import re
 import os
 
 app = Flask(__name__)
-
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 REFERER = "https://javplayer.cc/"
 
@@ -38,6 +37,7 @@ def resolve_manko(url, verify=False):
         "headers": {"Referer": REFERER, "User-Agent": UA},
         "verify": None,
         "discovery": None,
+        "stream_api_debug": None,
     }
 
     with sync_playwright() as p:
@@ -59,10 +59,17 @@ def resolve_manko(url, verify=False):
             if "javplayer.cc/stream" not in resp.url:
                 return
             try:
-                captured["url"] = resp.url
+                raw = resp.text()
+            except Exception:
+                raw = ""
+            captured["url"] = resp.url
+            captured["status"] = resp.status
+            captured["content_type"] = resp.headers.get("content-type")
+            captured["raw"] = raw[:4000]
+            try:
                 captured["json"] = resp.json()
             except Exception:
-                pass
+                captured["json"] = None
 
         page.on("request", on_request)
         page.on("response", on_response)
@@ -119,7 +126,6 @@ def resolve_manko(url, verify=False):
                             pass
                 except Exception:
                     pass
-
             page.wait_for_timeout(5000)
             frame = next((f for f in page.frames if "javplayer.cc/e/" in (f.url or "")), None)
             if frame:
@@ -158,39 +164,95 @@ def resolve_manko(url, verify=False):
             player_page = context.new_page()
             player_page.on("response", on_response)
             player_page.goto(player_url, wait_until="domcontentloaded", timeout=60000)
-            player_page.wait_for_timeout(4000)
+            player_page.wait_for_timeout(5000)
             target = player_page.main_frame
 
         page.wait_for_timeout(3000)
         if player_page:
             player_page.wait_for_timeout(2000)
 
-        if captured:
+        data = {}
+        if captured.get("json"):
             result["stream_api_url"] = captured.get("url")
             data = captured.get("json") or {}
+            result["stream_api_debug"] = {
+                "source": "captured_response",
+                "status": captured.get("status"),
+                "content_type": captured.get("content_type"),
+                "raw_preview": captured.get("raw"),
+            }
         else:
-            data = target.evaluate(r"""
+            fetch_result = target.evaluate(r"""
                 async () => {
                     const m = location.pathname.match(/\/e\/([^/?#]+)/);
                     if (!m) return {error: 'no player id'};
                     const u = new URL('/stream', location.origin);
                     new URLSearchParams(location.search).forEach((value, key) => u.searchParams.set(key, value));
                     u.searchParams.set('id', m[1]);
-                    const r = await fetch(u.toString());
+                    const r = await fetch(u.toString(), {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: {
+                            'Accept': 'application/json,text/plain,*/*',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
                     const raw = await r.text();
-                    let body = {};
-                    try { body = JSON.parse(raw); }
-                    catch (e) { body = {raw}; }
-                    return {api_url: u.toString(), status: r.status, body};
+                    let body = null;
+                    try { body = JSON.parse(raw); } catch (e) {}
+                    return {
+                        api_url: u.toString(),
+                        status: r.status,
+                        ok: r.ok,
+                        content_type: r.headers.get('content-type'),
+                        raw: raw.slice(0, 4000),
+                        body
+                    };
                 }
             """)
-            if data.get("error"):
-                browser.close()
+            if fetch_result.get("error"):
                 result["status"] = "stream_api_error"
-                result["error"] = data["error"]
+                result["error"] = fetch_result["error"]
+                browser.close()
                 return result
-            result["stream_api_url"] = data.get("api_url")
-            data = data.get("body") or {}
+            result["stream_api_url"] = fetch_result.get("api_url")
+            result["stream_api_debug"] = {
+                "source": "frame_fetch",
+                "status": fetch_result.get("status"),
+                "ok": fetch_result.get("ok"),
+                "content_type": fetch_result.get("content_type"),
+                "raw_preview": fetch_result.get("raw"),
+            }
+            data = fetch_result.get("body") or {}
+
+            # If in-page fetch did not yield media, retry through Playwright's request context
+            # while reusing browser cookies and the real javplayer Referer.
+            if not (isinstance(data, dict) and data.get("media", {}).get("stream")):
+                try:
+                    api_url = result["stream_api_url"]
+                    rr = context.request.get(api_url, headers={
+                        "Referer": player_url,
+                        "Origin": "https://javplayer.cc",
+                        "User-Agent": UA,
+                        "Accept": "application/json,text/plain,*/*",
+                        "X-Requested-With": "XMLHttpRequest",
+                    }, timeout=30000)
+                    raw2 = rr.text()
+                    try:
+                        data2 = rr.json()
+                    except Exception:
+                        data2 = {}
+                    result["stream_api_debug"]["request_context_retry"] = {
+                        "status": rr.status,
+                        "ok": rr.ok,
+                        "content_type": rr.headers.get("content-type"),
+                        "raw_preview": raw2[:4000],
+                    }
+                    if isinstance(data2, dict) and data2.get("media"):
+                        data = data2
+                except Exception as e:
+                    result["stream_api_debug"]["request_context_retry"] = {"error": str(e)}
 
         media = data.get("media", {}) if isinstance(data, dict) else {}
         result["stream_url"] = media.get("stream")
@@ -218,11 +280,7 @@ def resolve_manko(url, verify=False):
 
 @app.get("/")
 def root():
-    return jsonify({
-        "service": "manko-api",
-        "status": "ok",
-        "usage": "/manko?url=https://manko.fun/movie-info/...&verify=1"
-    })
+    return jsonify({"service": "manko-api", "status": "ok", "usage": "/manko?url=https://manko.fun/movie-info/...&verify=1"})
 
 
 @app.get("/health")
