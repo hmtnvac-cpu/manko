@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.5.1",
-  "description": "Stable result-first Manko collector: every completed movie is posted immediately to the addon backend.",
+  "version": "3.5.2",
+  "description": "Stable result-first workers with exhaustive category pagination for full-site Manko discovery.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
