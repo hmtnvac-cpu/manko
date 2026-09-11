@@ -1,6 +1,7 @@
 (() => {
   const text = el => (el?.textContent || '').replace(/\s+/g,' ').trim();
   const uniq = xs => [...new Set(xs.filter(Boolean))];
+  const movieId = (location.pathname.match(/\/movie-info\/([^/?#]+)/) || [])[1] || '';
 
   function playerUrls() {
     const out = [];
@@ -23,13 +24,11 @@
   function metaValue(labels) {
     const wanted = labels.map(x=>x.toLowerCase());
     for (const el of document.querySelectorAll('div,li,p,tr,dt')) {
-      const s = text(el);
-      const low = s.toLowerCase();
+      const s = text(el), low=s.toLowerCase();
       if (!wanted.some(x=>low.startsWith(x))) continue;
-      const colon = s.indexOf(':');
-      if (colon >= 0) return s.slice(colon+1).trim();
-      const next = el.nextElementSibling;
-      if (next) return text(next);
+      const colon=s.indexOf(':');
+      if(colon>=0) return s.slice(colon+1).trim();
+      if(el.nextElementSibling) return text(el.nextElementSibling);
     }
     return '';
   }
@@ -37,33 +36,28 @@
   function metadata() {
     const description = document.querySelector('meta[name="description"]')?.content ||
       text(document.querySelector('[class*="description"], [class*="synopsis"], [class*="overview"]'));
-    const genres = uniq([...document.querySelectorAll('a[href*="genre"],a[href*="category"],a[href*="tag"]')].map(text));
-    const actors = uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text));
     return {
       description,
-      genres,
-      actors,
-      code: metaValue(['code','movie code','品番']),
-      runtime: metaValue(['runtime','duration','length','収録時間']),
-      year: metaValue(['year','release year','発売年']),
-      releaseDate: metaValue(['release date','released','発売日']),
-      studio: metaValue(['studio','maker','label','メーカー']),
-      country: metaValue(['country','国']),
-      language: metaValue(['language','言語'])
+      genres:uniq([...document.querySelectorAll('a[href*="genre"],a[href*="category"],a[href*="tag"]')].map(text)),
+      actors:uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text)),
+      code:metaValue(['code','movie code','品番']),
+      runtime:metaValue(['runtime','duration','length','収録時間']),
+      year:metaValue(['year','release year','発売年']),
+      releaseDate:metaValue(['release date','released','発売日']),
+      studio:metaValue(['studio','maker','label','メーカー']),
+      country:metaValue(['country','国']),
+      language:metaValue(['language','言語'])
     };
   }
 
-  function send() {
-    const players = playerUrls();
-    if (!players.length) return false;
-    chrome.runtime.sendMessage({
-      type:'MANKO_PLAYER_FOUND', movieUrl:location.href, title:document.title,
-      poster:poster(), playerUrls:players, playerUrl:players[0], metadata:metadata()
-    });
+  function send(){
+    const players=playerUrls();
+    if(!players.length) return false;
+    chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:players,playerUrl:players[0],metadata:metadata()});
     return true;
   }
-  if (send()) return;
-  const obs = new MutationObserver(()=>{ if(send()) obs.disconnect(); });
+  if(send()) return;
+  const obs=new MutationObserver(()=>{if(send())obs.disconnect()});
   obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});
   setTimeout(()=>obs.disconnect(),30000);
 })();
