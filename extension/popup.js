@@ -42,7 +42,8 @@ $('scanManko').onclick = async () => {
     const urls = [...new Set(r.urls || [])];
     const scan = {pageUrl:r.pageUrl,count:urls.length,urls,scannedAt:new Date().toISOString()};
     await chrome.storage.local.set({[SCAN_KEY]:scan});
-    $('scanInfo').textContent = `Found ${urls.length} unique movie URL(s). Nothing has been resolved yet.`;
+    const sync = await chrome.runtime.sendMessage({type:'SYNC_CATALOG',pageUrl:r.pageUrl,urls});
+    $('scanInfo').textContent = `Found ${urls.length} unique movie URL(s). Server sync: ${sync?.ok ? 'OK' : 'FAILED'}.`;
   } catch (e) {
     $('scanInfo').textContent = `Scan error: ${e.message || e}`;
   }
