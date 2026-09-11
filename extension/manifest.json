@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko + Film4K Stream Collector",
-  "version": "1.3.0",
-  "description": "Resolve Manko and Film4K playback through the user's real browser session and sync resolved streams to Render.",
+  "version": "1.4.0",
+  "description": "Resolve Manko and Film4K playback, keep Chrome storage as canonical data, and auto-restore Render cache.",
   "permissions": ["tabs", "storage", "downloads", "webRequest", "activeTab"],
   "host_permissions": [
     "https://manko.fun/*",
@@ -14,7 +14,7 @@
     "https://*.fiml4k.fun/*"
   ],
   "background": {
-    "service_worker": "service_worker.js"
+    "service_worker": "service_worker_main.js"
   },
   "action": {
     "default_popup": "popup.html",
