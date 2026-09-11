@@ -10,6 +10,17 @@
     return m ? m[0].replace(/&amp;/g, '&') : null;
   }
 
+  function findPoster() {
+    const values = [
+      document.querySelector('meta[property="og:image"]')?.content,
+      document.querySelector('meta[name="twitter:image"]')?.content,
+      document.querySelector('video')?.poster,
+      document.querySelector('img[src*="cover"]')?.src,
+      document.querySelector('img')?.src
+    ].filter(Boolean);
+    return values[0] || '';
+  }
+
   function send() {
     const playerUrl = findPlayerUrl();
     if (!playerUrl) return false;
@@ -17,6 +28,7 @@
       type: 'MANKO_PLAYER_FOUND',
       movieUrl: location.href,
       title: document.title,
+      poster: findPoster(),
       playerUrl
     });
     return true;
