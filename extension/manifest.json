@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Manko + Film4K Stream Collector",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Resolve Manko and Film4K playback through the user's real browser session and collect final stream URLs and request headers.",
-  "permissions": ["tabs", "storage", "downloads", "webRequest"],
+  "permissions": ["tabs", "storage", "downloads", "webRequest", "activeTab"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
@@ -20,6 +20,11 @@
     "default_title": "Stream Collector"
   },
   "content_scripts": [
+    {
+      "matches": ["https://manko.fun/*"],
+      "js": ["content_manko_catalog.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": ["https://manko.fun/movie-info/*"],
       "js": ["content_manko.js"],
