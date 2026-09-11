@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Manko Test 10",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Fresh 10-movie Manko test: Vietnamese metadata, multiple streams and one Vietnamese subtitle.",
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
@@ -19,11 +19,6 @@
     "default_title": "Manko Test 10"
   },
   "content_scripts": [
-    {
-      "matches": ["https://manko.fun/*"],
-      "js": ["content_manko_catalog.js"],
-      "run_at": "document_idle"
-    },
     {
       "matches": ["https://manko.fun/movie-info/*"],
       "js": ["content_manko.js"],
