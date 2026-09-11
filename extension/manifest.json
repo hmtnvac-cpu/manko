@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Manko + Film4K Stream Collector",
-  "version": "1.4.0",
-  "description": "Resolve Manko and Film4K playback, keep Chrome storage as canonical data, and auto-restore Render cache.",
+  "name": "Manko Stream Collector",
+  "version": "1.5.0",
+  "description": "Resolve Manko streams, collect full metadata, Vietnamese subtitle and keep Chrome storage as canonical data.",
   "permissions": ["tabs", "storage", "downloads", "webRequest", "activeTab"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
+    "https://healertanker.com/*",
+    "https://translate.googleapis.com/*",
     "https://manko-api.onrender.com/*",
     "https://film4k.net/*",
     "https://*.film4k.net/*",
@@ -18,7 +20,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Stream Collector"
+    "default_title": "Manko Stream Collector"
   },
   "content_scripts": [
     {
