@@ -9,11 +9,12 @@ GENRES={
  "female teacher":"Cô giáo","school swimsuit":"Đồ bơi học sinh","leaked":"Rò rỉ","fc2":"FC2"
 }
 MANIFEST={
- "id":"community.manko.addon","version":"1.6.0","name":"Manko",
+ "id":"community.manko.addon","version":"1.6.1","name":"Manko",
  "description":"Danh mục Manko đã Việt hóa, có Snapshots và phân loại theo từ khóa",
  "resources":["catalog","meta","stream"],"types":["series"],"idPrefixes":["series_manko_"],
  "catalogs":[{"type":"series","id":"manko_snapshots","name":"🎬 MANKO","extra":[{"name":"skip","isRequired":False},{"name":"search","isRequired":False},{"name":"genre","isRequired":False,"options":["Phổ biến","Đánh giá cao","Mới","Không che","Kiểm duyệt","Phương Tây","Ngực lớn","Ngoại tình","Nhìn trộm","Một mình","Góc nhìn thứ nhất","Cô giáo","Đồ bơi học sinh","Rò rỉ","FC2"]}]}]
 }
+
 def clean_title(v):
  t=str(v or 'Manko').strip()
  for s in [' - Watch Free in HD | Manko',' | Manko']:
@@ -73,7 +74,9 @@ def base_meta(i):
  return out
 def series_meta_of(i,with_videos=False):
  out=base_meta(i)
- if out and with_videos:out['videos']=[{"id":f"{out['id']}:1:{n}","title":f"Ảnh {n}","season":1,"episode":n,"thumbnail":u,"overview":movie_title(i)} for n,u in enumerate(snapshots_of(i),1)]
+ if out and with_videos:
+  shots=snapshots_of(i)
+  out['videos']=[{"id":f"{out['id']}:1:{n}","title":f"Ảnh {n}","season":1,"episode":n,"thumbnail":u,"overview":movie_title(i)} for n,u in enumerate(shots,1)]
  return out
 def ordered_items(store):
  movies=store.get('movies') or {};order=(store.get('catalog') or {}).get('urls') or [];byurl={x.get('movieUrl'):x for x in movies.values()};items=[byurl[u] for u in order if u in byurl];seen={x.get('id') for x in items};items.extend(sorted((x for x in movies.values() if x.get('id') not in seen),key=lambda x:x.get('collectedAt') or '',reverse=True));return items
@@ -91,7 +94,7 @@ def register_manko_addon(app,load_store):
  @app.get('/catalog/series/manko_snapshots.json')
  @app.get('/catalog/series/manko_snapshots/<path:extra>.json')
  def snapshots_catalog(extra=None):
-  items=[x for x in ordered_items(load_store()) if snapshots_of(x)];p=parse_extra(extra);q=str(p.get('search') or request.args.get('search') or '').lower();genre=str(p.get('genre') or request.args.get('genre') or '')
+  items=ordered_items(load_store());p=parse_extra(extra);q=str(p.get('search') or request.args.get('search') or '').lower();genre=str(p.get('genre') or request.args.get('genre') or '')
   try:skip=int(p.get('skip') or request.args.get('skip') or 0)
   except:skip=0
   if q:items=[x for x in items if q in (movie_title(x)+' '+str((x.get('metadata') or {}).get('actors',[]))).lower()]
