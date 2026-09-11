@@ -3,6 +3,12 @@
   const uniq = xs => [...new Set(xs.filter(Boolean))];
   const movieId = (location.pathname.match(/\/movie-info\/([^/?#]+)/) || [])[1] || '';
 
+  function isServerError() {
+    const t=(document.title||'').trim();
+    const b=(document.body?.innerText||'').slice(0,800);
+    return /^500\b/i.test(t) || /500\s+internal\s+server\s+error/i.test(b) || /internal\s+server\s+error/i.test(b);
+  }
+
   function firstPlayer() {
     for (const el of document.querySelectorAll('iframe')) {
       const src = el.src || el.getAttribute('src') || '';
@@ -54,14 +60,22 @@
     };
   }
 
+  let sent=false;
   function send(){
+    if(sent) return true;
+    if(isServerError()){
+      sent=true;
+      chrome.runtime.sendMessage({type:'MANKO_PAGE_ERROR',movieUrl:location.href,status:500,error:'Manko HTTP 500'});
+      return true;
+    }
     const player=firstPlayer();
     if(!player) return false;
+    sent=true;
     chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:[player],playerUrl:player,metadata:metadata()});
     return true;
   }
   if(send()) return;
   const obs=new MutationObserver(()=>{if(send())obs.disconnect()});
   obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});
-  setTimeout(()=>obs.disconnect(),15000);
+  setTimeout(()=>{if(!sent&&isServerError())send();obs.disconnect()},12000);
 })();
