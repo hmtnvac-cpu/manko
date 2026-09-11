@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.2.0",
-  "description": "Full-site Manko crawler with pagination, year filtering, Vietnamese metadata, multiple streams and resume.",
+  "version": "3.3.0",
+  "description": "Ordered full-site Manko crawler with resume, Vietnamese metadata and multiple streams.",
   "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": [
     "https://manko.fun/*",
