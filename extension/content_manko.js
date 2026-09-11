@@ -3,15 +3,14 @@
   const uniq = xs => [...new Set(xs.filter(Boolean))];
   const movieId = (location.pathname.match(/\/movie-info\/([^/?#]+)/) || [])[1] || '';
 
-  function playerUrls() {
-    const out = [];
+  function firstPlayer() {
     for (const el of document.querySelectorAll('iframe')) {
       const src = el.src || el.getAttribute('src') || '';
-      if (src.includes('javplayer.cc/e/')) out.push(src);
+      if (src.includes('javplayer.cc/e/')) return src.replace(/&amp;/g,'&');
     }
     const html = document.documentElement.innerHTML.replace(/\\\//g, '/');
-    for (const m of html.matchAll(/https:\/\/javplayer\.cc\/e\/[^"'<>\\s]+/g)) out.push(m[0]);
-    return uniq(out.map(x=>x.replace(/&amp;/g,'&')));
+    const m = html.match(/https:\/\/javplayer\.cc\/e\/[^"'<>\\s]+/);
+    return m ? m[0].replace(/&amp;/g,'&') : '';
   }
 
   function poster() {
@@ -41,14 +40,12 @@
   function metadata() {
     const description = document.querySelector('meta[name="description"]')?.content ||
       text(document.querySelector('[class*="description"], [class*="synopsis"], [class*="overview"]'));
-    const runtimeRaw=field('Video Duration') || field('Duration') || field('Runtime');
-    const ratingRaw=field('Rating');
     return {
       description,
       actors:actors(),
       code:field('Title'),
-      rating:ratingRaw,
-      runtime:runtimeRaw,
+      rating:field('Rating'),
+      runtime:field('Video Duration') || field('Duration') || field('Runtime'),
       size:field('Size'),
       releaseDate:field('Release date') || field('Release Date'),
       studio:field('Maker') || field('Studio'),
@@ -58,13 +55,13 @@
   }
 
   function send(){
-    const players=playerUrls();
-    if(!players.length) return false;
-    chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:players,playerUrl:players[0],metadata:metadata()});
+    const player=firstPlayer();
+    if(!player) return false;
+    chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:[player],playerUrl:player,metadata:metadata()});
     return true;
   }
   if(send()) return;
   const obs=new MutationObserver(()=>{if(send())obs.disconnect()});
   obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});
-  setTimeout(()=>obs.disconnect(),30000);
+  setTimeout(()=>obs.disconnect(),15000);
 })();
