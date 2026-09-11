@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request
 from playwright.sync_api import sync_playwright
 from datetime import datetime, timezone
 from threading import Lock
-from urllib.parse import urlparse
 import hashlib
 import json
 import re
@@ -94,28 +93,13 @@ def resolve_manko(url, verify=False):
         browser = p.chromium.launch(headless=True, args=["--disable-dev-shm-usage", "--no-sandbox"])
         context = browser.new_context(user_agent=UA, viewport={"width": 1365, "height": 900})
         page = context.new_page()
-        captured, seen_urls = {}, []
+        seen_urls = []
 
         def remember(u):
             if u and u not in seen_urls:
                 seen_urls.append(u)
 
-        def on_response(resp):
-            remember(resp.url)
-            if "javplayer.cc/stream" not in resp.url:
-                return
-            try:
-                raw = resp.text()
-            except Exception:
-                raw = ""
-            captured.update({"url": resp.url, "status": resp.status, "content_type": resp.headers.get("content-type"), "raw": raw[:4000]})
-            try:
-                captured["json"] = json.loads(raw)
-            except Exception:
-                captured["json"] = None
-
         page.on("request", lambda req: remember(req.url))
-        page.on("response", on_response)
         page.goto(url, wait_until="domcontentloaded", timeout=90000)
         page.wait_for_timeout(8000)
         result["title"], result["final_url"] = page.title(), page.url
@@ -127,54 +111,44 @@ def resolve_manko(url, verify=False):
             try:
                 srcs = page.locator("iframe").evaluate_all("els => els.map(e => e.src || e.getAttribute('src') || '')")
                 player_url = first_javplayer_url(srcs)
-                if player_url: discovery = "iframe_src"
-            except Exception: pass
+                if player_url:
+                    discovery = "iframe_src"
+            except Exception:
+                pass
         if not player_url:
             player_url = first_javplayer_url(seen_urls)
-            if player_url: discovery = "network"
+            if player_url:
+                discovery = "network"
         if not player_url:
             try:
                 html = page.content()
                 player_url = first_javplayer_url([html, html.replace("\\/", "/")])
-                if player_url: discovery = "html"
-            except Exception: pass
+                if player_url:
+                    discovery = "html"
+            except Exception:
+                pass
         if not player_url:
             result["status"] = "no_player"
-            result["discovery"] = {"frames": [f.url for f in page.frames], "javplayer_requests": [u for u in seen_urls if "javplayer" in u.lower()][-20:]}
-            browser.close(); return result
+            browser.close()
+            return result
 
-        result["player_url"], result["player_id"], result["discovery"] = player_url, extract_player_id(player_url), discovery
-        player_page = context.new_page()
-        player_page.on("response", on_response)
-        player_page.goto(player_url, wait_until="domcontentloaded", timeout=60000)
-        player_page.wait_for_timeout(5000)
-        target = player_page.main_frame
-
-        fetch_result = target.evaluate(r"""
-            async () => {
-                const m = location.pathname.match(/\/e\/([^/?#]+)/);
-                if (!m) return {error:'no player id'};
-                const u = new URL('/stream', location.origin);
-                new URLSearchParams(location.search).forEach((v,k)=>u.searchParams.set(k,v));
-                u.searchParams.set('id',m[1]);
-                const r = await fetch(u.toString(), {credentials:'include',cache:'no-store',headers:{'Accept':'application/json,text/plain,*/*','X-Requested-With':'XMLHttpRequest'}});
-                const raw = await r.text();
-                let body = null; try { body = JSON.parse(raw); } catch(e) {}
-                return {api_url:u.toString(),status:r.status,ok:r.ok,content_type:r.headers.get('content-type'),raw:raw.slice(0,4000),body};
-            }
-        """)
-        result["stream_api_url"] = fetch_result.get("api_url")
-        result["stream_api_debug"] = {"source":"frame_fetch","status":fetch_result.get("status"),"ok":fetch_result.get("ok"),"content_type":fetch_result.get("content_type"),"raw_preview":fetch_result.get("raw")}
-        data = fetch_result.get("body") or {}
-        media = data.get("media", {}) if isinstance(data, dict) else {}
-        result["stream_url"], result["vtt_url"] = media.get("stream"), media.get("vtt")
-        result["status"] = "ok" if result["stream_url"] else "no_stream"
-        browser.close(); return result
+        result["player_url"] = player_url
+        result["player_id"] = extract_player_id(player_url)
+        result["discovery"] = discovery
+        result["status"] = "player_found_server_stream_blocked"
+        browser.close()
+        return result
 
 
 @app.get("/")
 def root():
-    return jsonify({"service":"manko-api","status":"ok","collector":"/collector/results","stats":"/collector/stats"})
+    return jsonify({
+        "service": "manko-api",
+        "status": "ok",
+        "addon_manifest": "/manifest.json",
+        "collector": "/collector/results",
+        "stats": "/collector/stats"
+    })
 
 
 @app.get("/health")
@@ -186,15 +160,15 @@ def health():
 def collector_result():
     payload = request.get_json(silent=True) or {}
     if not str(payload.get("movieUrl") or "").startswith("https://manko.fun/movie-info/"):
-        return jsonify({"ok":False,"error":"invalid movieUrl"}), 400
+        return jsonify({"ok": False, "error": "invalid movieUrl"}), 400
     if not str(payload.get("streamUrl") or "").startswith(("http://", "https://")):
-        return jsonify({"ok":False,"error":"invalid streamUrl"}), 400
+        return jsonify({"ok": False, "error": "invalid streamUrl"}), 400
     item = sanitize_result(payload)
     with STORE_LOCK:
         store = load_store()
         store.setdefault("movies", {})[item["id"]] = item
         save_store(store)
-    return jsonify({"ok":True,"id":item["id"],"stored":len(store.get("movies",{}))})
+    return jsonify({"ok": True, "id": item["id"], "stored": len(store.get("movies", {}))})
 
 
 @app.post("/collector/error")
@@ -206,7 +180,7 @@ def collector_error():
         store = load_store()
         store.setdefault("errors", {})[key] = {**payload, "updatedAt": utcnow()}
         save_store(store)
-    return jsonify({"ok":True})
+    return jsonify({"ok": True})
 
 
 @app.post("/collector/catalog")
@@ -218,7 +192,7 @@ def collector_catalog():
         store = load_store()
         store["catalog"] = {"total": len(urls), "urls": urls, "pageUrl": payload.get("pageUrl"), "updatedAt": utcnow()}
         save_store(store)
-    return jsonify({"ok":True,"total":len(urls)})
+    return jsonify({"ok": True, "total": len(urls)})
 
 
 @app.get("/collector/results")
@@ -228,14 +202,14 @@ def collector_results():
     items.sort(key=lambda x: x.get("collectedAt") or "", reverse=True)
     skip = max(0, int(request.args.get("skip", "0") or 0))
     limit = min(500, max(1, int(request.args.get("limit", "100") or 100)))
-    return jsonify({"total":len(items),"items":items[skip:skip+limit]})
+    return jsonify({"total": len(items), "items": items[skip:skip+limit]})
 
 
 @app.get("/collector/results/<movie_id>")
 def collector_one(movie_id):
     item = load_store().get("movies", {}).get(movie_id)
     if not item:
-        return jsonify({"error":"not found"}), 404
+        return jsonify({"error": "not found"}), 404
     return jsonify(item)
 
 
@@ -247,7 +221,13 @@ def collector_stats():
     resolved = len(store.get("movies", {}))
     errors = len(store.get("errors", {}))
     remaining = max(0, total_catalog - resolved - errors) if isinstance(total_catalog, int) else None
-    return jsonify({"catalogTotal":total_catalog,"resolved":resolved,"errors":errors,"remaining":remaining,"catalogUpdatedAt":catalog.get("updatedAt")})
+    return jsonify({
+        "catalogTotal": total_catalog,
+        "resolved": resolved,
+        "errors": errors,
+        "remaining": remaining,
+        "catalogUpdatedAt": catalog.get("updatedAt")
+    })
 
 
 @app.get("/manko")
@@ -255,11 +235,15 @@ def manko():
     url = request.args.get("url", "").strip()
     verify = request.args.get("verify", "0").lower() in {"1", "true", "yes"}
     if not url.startswith("https://manko.fun/"):
-        return jsonify({"status":"error","error":"A valid https://manko.fun/ URL is required"}), 400
+        return jsonify({"status": "error", "error": "A valid https://manko.fun/ URL is required"}), 400
     try:
         return jsonify(resolve_manko(url, verify=verify))
     except Exception as e:
-        return jsonify({"status":"error","error":str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+from manko_addon import register_manko_addon
+register_manko_addon(app, load_store)
 
 
 if __name__ == "__main__":
