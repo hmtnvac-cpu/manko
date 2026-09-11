@@ -72,12 +72,10 @@ def resolve_manko(url, verify=False):
         result["title"] = page.title()
         result["final_url"] = page.url
 
-        # 1) Normal frame discovery.
         frame = next((f for f in page.frames if "javplayer.cc/e/" in (f.url or "")), None)
         player_url = frame.url if frame else None
         discovery = "frame" if frame else None
 
-        # 2) Inspect iframe src attributes even when the frame itself did not navigate.
         if not player_url:
             try:
                 iframe_srcs = page.locator("iframe").evaluate_all("els => els.map(e => e.src || e.getAttribute('src') || '')")
@@ -87,13 +85,11 @@ def resolve_manko(url, verify=False):
             except Exception:
                 pass
 
-        # 3) Inspect every browser request/resource URL.
         if not player_url:
             player_url = first_javplayer_url(seen_urls)
             if player_url:
                 discovery = "network"
 
-        # 4) Inspect rendered HTML / inline state.
         if not player_url:
             try:
                 html = page.content()
@@ -103,7 +99,6 @@ def resolve_manko(url, verify=False):
             except Exception:
                 pass
 
-        # 5) Broader click pass, including links/tabs/divs whose text mentions playback.
         if not player_url:
             selectors = [
                 "text=Streaming", "text=Play", "text=Watch", "text=Xem",
@@ -157,7 +152,6 @@ def resolve_manko(url, verify=False):
         result["player_id"] = extract_player_id(player_url)
         result["discovery"] = discovery
 
-        # If the original page has no usable frame, open player directly in the same browser context.
         player_page = None
         target = frame if frame and frame.url == player_url else None
         if target is None:
@@ -167,7 +161,6 @@ def resolve_manko(url, verify=False):
             player_page.wait_for_timeout(4000)
             target = player_page.main_frame
 
-        # Give javplayer a chance to call /stream by itself.
         page.wait_for_timeout(3000)
         if player_page:
             player_page.wait_for_timeout(2000)
@@ -184,8 +177,10 @@ def resolve_manko(url, verify=False):
                     new URLSearchParams(location.search).forEach((value, key) => u.searchParams.set(key, value));
                     u.searchParams.set('id', m[1]);
                     const r = await fetch(u.toString());
+                    const raw = await r.text();
                     let body = {};
-                    try { body = await r.json(); } catch (e) { body = {raw: await r.text()}; }
+                    try { body = JSON.parse(raw); }
+                    catch (e) { body = {raw}; }
                     return {api_url: u.toString(), status: r.status, body};
                 }
             """)
