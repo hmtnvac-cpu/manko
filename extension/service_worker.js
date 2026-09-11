@@ -1,4 +1,5 @@
 const STATE_KEY = 'manko_collector_state';
+const API = 'https://manko-api.onrender.com';
 
 async function getState() {
   const r = await chrome.storage.local.get(STATE_KEY);
@@ -12,6 +13,21 @@ function sourceFor(url='') {
   return null;
 }
 
+async function postJson(path, body) {
+  try {
+    const r = await fetch(API + path, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    const text = await r.text();
+    let data = null; try { data = JSON.parse(text); } catch (_) {}
+    return {ok:r.ok,status:r.status,data,text:text.slice(0,500)};
+  } catch (e) {
+    return {ok:false,error:String(e?.message || e)};
+  }
+}
+
 async function processNext() {
   const state = await getState();
   if (state.running || !state.queue.length) return;
@@ -23,7 +39,7 @@ async function processNext() {
     return processNext();
   }
   state.running = true;
-  state.current = {source,movieUrl,movieTabId:null,playerTabId:null,title:null,playerUrl:null,candidates:[]};
+  state.current = {source,movieUrl,movieTabId:null,playerTabId:null,title:null,poster:null,playerUrl:null,candidates:[]};
   await setState(state);
   const tab = await chrome.tabs.create({url: movieUrl, active:false});
   state.current.movieTabId = tab.id;
@@ -33,8 +49,20 @@ async function processNext() {
 async function finishCurrent(success, payload) {
   const state = await getState();
   const cur = state.current || {};
-  if (success) state.results.push({...cur, ...payload, collectedAt:new Date().toISOString()});
-  else state.errors.push({...cur, ...payload, collectedAt:new Date().toISOString()});
+  const record = {...cur, ...payload, collectedAt:new Date().toISOString()};
+
+  if (success) {
+    if (cur.source === 'manko') {
+      record.sync = await postJson('/collector/result', record);
+    }
+    state.results.push(record);
+  } else {
+    if (cur.source === 'manko') {
+      record.sync = await postJson('/collector/error', record);
+    }
+    state.errors.push(record);
+  }
+
   for (const id of [cur.movieTabId, cur.playerTabId]) {
     if (id) { try { await chrome.tabs.remove(id); } catch (_) {} }
   }
@@ -88,10 +116,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'START_QUEUE') {
       const state = await getState();
       const incoming = [...new Set((msg.urls || []).map(x => x.trim()).filter(x => sourceFor(x)))];
-      state.queue.push(...incoming);
+      const existing = new Set([
+        ...(state.queue || []),
+        ...(state.results || []).map(x=>x.movieUrl),
+        ...(state.errors || []).map(x=>x.movieUrl),
+        state.current?.movieUrl
+      ].filter(Boolean));
+      const added = incoming.filter(x => !existing.has(x));
+      state.queue.push(...added);
       await setState(state);
       processNext();
-      sendResponse({ok:true, added:incoming.length});
+      sendResponse({ok:true, added:added.length});
       return;
     }
 
@@ -99,6 +134,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const state = await getState();
       if (!state.current) return;
       state.current.title = msg.title;
+      state.current.poster = msg.poster || '';
       state.current.playerUrl = msg.playerUrl;
       const tab = await chrome.tabs.create({url: msg.playerUrl, active:false});
       state.current.playerTabId = tab.id;
@@ -130,6 +166,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    if (msg.type === 'SYNC_CATALOG') {
+      sendResponse(await postJson('/collector/catalog', {
+        pageUrl: msg.pageUrl,
+        urls: msg.urls || []
+      }));
+      return;
+    }
+
     if (msg.type === 'FILM4K_READY') {
       const state = await getState();
       if (state.current?.source === 'film4k') {
@@ -146,16 +190,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.current.title = msg.title || state.current.title;
       const candidates = [...(state.current.candidates || [])].sort((a,b)=>(b.score||0)-(a.score||0));
       const best = candidates[0] || null;
-      if (best) {
-        await finishCurrent(true, {
-          streamUrl: best.url,
-          headers: best.headers || {},
-          candidates,
-          captureMode:'webRequest'
-        });
-      } else {
-        await finishCurrent(false, {error:msg.error || 'No Film4K HLS/API request captured', candidates:[]});
-      }
+      if (best) await finishCurrent(true, {streamUrl:best.url,headers:best.headers||{},candidates,captureMode:'webRequest'});
+      else await finishCurrent(false, {error:msg.error || 'No Film4K HLS/API request captured',candidates:[]});
       sendResponse({ok:true});
       return;
     }
