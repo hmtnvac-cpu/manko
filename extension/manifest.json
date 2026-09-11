@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.4.3",
-  "description": "Full-site Manko crawler with 2 workers, retry, Snapshot metadata and improved Vietnamese translation repair.",
+  "version": "3.4.4",
+  "description": "Exhaustive Manko crawler with active pagination, 2 workers, retry, Snapshot metadata, genre tags and improved Vietnamese translation.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
