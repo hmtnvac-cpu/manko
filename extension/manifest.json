@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Manko + Film4K Stream Collector",
-  "version": "1.2.0",
-  "description": "Resolve Manko and Film4K playback through the user's real browser session and collect final stream URLs and request headers.",
+  "version": "1.3.0",
+  "description": "Resolve Manko and Film4K playback through the user's real browser session and sync resolved streams to Render.",
   "permissions": ["tabs", "storage", "downloads", "webRequest", "activeTab"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
+    "https://manko-api.onrender.com/*",
     "https://film4k.net/*",
     "https://*.film4k.net/*",
     "https://fiml4k.fun/*",
