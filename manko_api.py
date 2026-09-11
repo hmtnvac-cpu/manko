@@ -1,7 +1,7 @@
 from flask import Flask,jsonify,request
 from datetime import datetime,timezone
 from threading import Lock
-import hashlib,json,re,os
+import hashlib,json,os
 app=Flask(__name__);REFERER='https://javplayer.cc/';STORE_FILE=os.environ.get('MANKO_RESULTS_FILE','/tmp/manko_collector_results.json');STORE_LOCK=Lock()
 def utcnow():return datetime.now(timezone.utc).isoformat()
 def load_store():
@@ -17,9 +17,13 @@ def movie_key(p):
 def sanitize_result(p):
  streams=[]
  for n,s in enumerate(p.get('streams') or [],1):
-  if isinstance(s,dict) and str(s.get('url') or '').startswith(('http://','https://')):streams.append({'name':s.get('name') or f'#{n}','url':s['url'],'vttUrl':s.get('vttUrl'),'headers':s.get('headers') or {'Referer':REFERER},'playerId':s.get('playerId'),'playerUrl':s.get('playerUrl')})
+  if isinstance(s,dict) and str(s.get('url') or '').startswith(('http://','https://')):
+   h=s.get('headers') if isinstance(s.get('headers'),dict) else {'Referer':REFERER};h.setdefault('Referer',REFERER)
+   streams.append({'name':s.get('name') or f'#{n}','url':s['url'],'vttUrl':s.get('vttUrl'),'headers':h,'playerId':s.get('playerId'),'playerUrl':s.get('playerUrl')})
  if not streams and str(p.get('streamUrl') or '').startswith(('http://','https://')):streams=[{'name':'#1','url':p['streamUrl'],'vttUrl':p.get('vttUrl'),'headers':p.get('headers') or {'Referer':REFERER},'playerId':p.get('playerId'),'playerUrl':p.get('playerUrl')}]
- return {'id':movie_key(p),'title':str(p.get('title') or 'Manko').strip(),'movieUrl':str(p.get('movieUrl') or '').strip(),'poster':str(p.get('poster') or '').strip(),'playerId':str(p.get('playerId') or streams[0].get('playerId') if streams else ''),'playerUrl':str(p.get('playerUrl') or streams[0].get('playerUrl') if streams else ''),'streamUrl':streams[0]['url'] if streams else '','streams':streams,'metadata':p.get('metadata') if isinstance(p.get('metadata'),dict) else {},'headers':streams[0].get('headers') if streams else {'Referer':REFERER},'collectedAt':str(p.get('collectedAt') or utcnow()),'updatedAt':utcnow()}
+ meta=p.get('metadata') if isinstance(p.get('metadata'),dict) else {}
+ subtitle=str(p.get('subtitleVi') or meta.get('subtitleVi') or '').strip()
+ return {'id':movie_key(p),'title':str(p.get('title') or 'Manko').strip(),'titleVi':str(p.get('titleVi') or meta.get('titleVi') or '').strip(),'movieUrl':str(p.get('movieUrl') or '').strip(),'poster':str(p.get('poster') or '').strip(),'playerId':str(p.get('playerId') or (streams[0].get('playerId') if streams else '') or ''),'playerUrl':str(p.get('playerUrl') or (streams[0].get('playerUrl') if streams else '') or ''),'streamUrl':streams[0]['url'] if streams else '','streams':streams,'subtitleVi':subtitle,'metadata':meta,'headers':streams[0].get('headers') if streams else {'Referer':REFERER},'collectedAt':str(p.get('collectedAt') or utcnow()),'updatedAt':utcnow()}
 @app.get('/')
 def root():return jsonify({'service':'manko-api','status':'ok','addon_manifest':'/manifest.json','collector':'/collector/results','stats':'/collector/stats'})
 @app.get('/health')
@@ -30,9 +34,8 @@ def result():
  if not str(p.get('movieUrl') or '').startswith('https://manko.fun/movie-info/'):return jsonify({'ok':False,'error':'invalid movieUrl'}),400
  i=sanitize_result(p)
  if not i['streams']:return jsonify({'ok':False,'error':'no valid streams'}),400
- with STORE_LOCK:
-  s=load_store();s.setdefault('movies',{})[i['id']]=i;save_store(s)
- return jsonify({'ok':True,'id':i['id'],'stored':len(s.get('movies',{})),'streams':len(i['streams']),'metadata':bool(i['metadata'])})
+ with STORE_LOCK:s=load_store();s.setdefault('movies',{})[i['id']]=i;save_store(s)
+ return jsonify({'ok':True,'id':i['id'],'stored':len(s.get('movies',{})),'streams':len(i['streams']),'metadata':bool(i['metadata']),'subtitleVi':bool(i['subtitleVi'])})
 @app.post('/collector/error')
 def error():
  p=request.get_json(silent=True) or {};k=hashlib.sha1(str(p.get('movieUrl') or '').encode()).hexdigest()[:16]
