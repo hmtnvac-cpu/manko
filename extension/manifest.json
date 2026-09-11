@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Manko Demo Collector",
-  "version": "1.6.0",
-  "description": "Clean 20-movie Manko demo collector: Vietnamese metadata, multiple streams and one Vietnamese subtitle.",
+  "name": "Manko Test 10",
+  "version": "2.0.0",
+  "description": "Fresh 10-movie Manko test: Vietnamese metadata, multiple streams and one Vietnamese subtitle.",
   "permissions": ["tabs", "storage"],
   "host_permissions": [
     "https://manko.fun/*",
@@ -16,9 +16,14 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Manko Demo Collector"
+    "default_title": "Manko Test 10"
   },
   "content_scripts": [
+    {
+      "matches": ["https://manko.fun/*"],
+      "js": ["content_manko_catalog.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": ["https://manko.fun/movie-info/*"],
       "js": ["content_manko.js"],
