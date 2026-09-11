@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.5.2",
-  "description": "Stable result-first workers with exhaustive category pagination for full-site Manko discovery.",
+  "version": "3.5.3",
+  "description": "Stable result-first workers with full-site discovery in exact source page order.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
