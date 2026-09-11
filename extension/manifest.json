@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.5.0",
-  "description": "Clean restart Manko crawler with exhaustive pagination, 2-worker watchdog, retries, Snapshots, genre metadata and improved Vietnamese translation.",
+  "version": "3.5.1",
+  "description": "Stable result-first Manko collector: every completed movie is posted immediately to the addon backend.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
