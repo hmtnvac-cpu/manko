@@ -14,6 +14,16 @@ def extract_player_id(url):
     return m.group(1) if m else None
 
 
+def first_javplayer_url(values):
+    for value in values:
+        if not value:
+            continue
+        m = re.search(r"https://javplayer\.cc/e/[^\"'<>\\\s]+", value)
+        if m:
+            return m.group(0).replace("&amp;", "&")
+    return None
+
+
 def resolve_manko(url, verify=False):
     result = {
         "status": "starting",
@@ -27,6 +37,7 @@ def resolve_manko(url, verify=False):
         "vtt_url": None,
         "headers": {"Referer": REFERER, "User-Agent": UA},
         "verify": None,
+        "discovery": None,
     }
 
     with sync_playwright() as p:
@@ -34,8 +45,17 @@ def resolve_manko(url, verify=False):
         context = browser.new_context(user_agent=UA, viewport={"width": 1365, "height": 900})
         page = context.new_page()
         captured = {}
+        seen_urls = []
+
+        def remember(u):
+            if u and u not in seen_urls:
+                seen_urls.append(u)
+
+        def on_request(req):
+            remember(req.url)
 
         def on_response(resp):
+            remember(resp.url)
             if "javplayer.cc/stream" not in resp.url:
                 return
             try:
@@ -44,47 +64,119 @@ def resolve_manko(url, verify=False):
             except Exception:
                 pass
 
+        page.on("request", on_request)
         page.on("response", on_response)
         page.goto(url, wait_until="domcontentloaded", timeout=90000)
-        page.wait_for_timeout(10000)
+        page.wait_for_timeout(8000)
 
         result["title"] = page.title()
         result["final_url"] = page.url
 
+        # 1) Normal frame discovery.
         frame = next((f for f in page.frames if "javplayer.cc/e/" in (f.url or "")), None)
-        if not frame:
-            for sel in [
+        player_url = frame.url if frame else None
+        discovery = "frame" if frame else None
+
+        # 2) Inspect iframe src attributes even when the frame itself did not navigate.
+        if not player_url:
+            try:
+                iframe_srcs = page.locator("iframe").evaluate_all("els => els.map(e => e.src || e.getAttribute('src') || '')")
+                player_url = first_javplayer_url(iframe_srcs)
+                if player_url:
+                    discovery = "iframe_src"
+            except Exception:
+                pass
+
+        # 3) Inspect every browser request/resource URL.
+        if not player_url:
+            player_url = first_javplayer_url(seen_urls)
+            if player_url:
+                discovery = "network"
+
+        # 4) Inspect rendered HTML / inline state.
+        if not player_url:
+            try:
+                html = page.content()
+                player_url = first_javplayer_url([html, html.replace("\\/", "/")])
+                if player_url:
+                    discovery = "html"
+            except Exception:
+                pass
+
+        # 5) Broader click pass, including links/tabs/divs whose text mentions playback.
+        if not player_url:
+            selectors = [
+                "text=Streaming", "text=Play", "text=Watch", "text=Xem",
                 "button:has-text('Streaming')", "button:has-text('Play')", "button:has-text('Watch')",
-                "[aria-label*='play' i]", ".fluid_button_play", ".fluid_controls_playpause", "video"
-            ]:
+                "a:has-text('Streaming')", "a:has-text('Play')", "a:has-text('Watch')",
+                "[role='tab']:has-text('Streaming')", "[aria-label*='play' i]",
+                ".fluid_button_play", ".fluid_controls_playpause", "video"
+            ]
+            for sel in selectors:
                 try:
                     loc = page.locator(sel)
-                    for i in range(min(loc.count(), 5)):
+                    for i in range(min(loc.count(), 8)):
                         try:
                             if loc.nth(i).is_visible():
-                                loc.nth(i).click(force=True, timeout=2500)
+                                loc.nth(i).click(force=True, timeout=2000)
                                 page.wait_for_timeout(1000)
                         except Exception:
                             pass
                 except Exception:
                     pass
-            page.wait_for_timeout(3000)
-            frame = next((f for f in page.frames if "javplayer.cc/e/" in (f.url or "")), None)
 
-        if not frame:
-            browser.close()
+            page.wait_for_timeout(5000)
+            frame = next((f for f in page.frames if "javplayer.cc/e/" in (f.url or "")), None)
+            if frame:
+                player_url = frame.url
+                discovery = "frame_after_click"
+            if not player_url:
+                player_url = first_javplayer_url(seen_urls)
+                if player_url:
+                    discovery = "network_after_click"
+            if not player_url:
+                try:
+                    html = page.content()
+                    player_url = first_javplayer_url([html, html.replace("\\/", "/")])
+                    if player_url:
+                        discovery = "html_after_click"
+                except Exception:
+                    pass
+
+        if not player_url:
             result["status"] = "no_player"
+            result["discovery"] = {
+                "frames": [f.url for f in page.frames],
+                "iframes": page.locator("iframe").count(),
+                "javplayer_requests": [u for u in seen_urls if "javplayer" in u.lower()][-20:],
+            }
+            browser.close()
             return result
 
-        result["player_url"] = frame.url
-        result["player_id"] = extract_player_id(frame.url)
-        page.wait_for_timeout(5000)
+        result["player_url"] = player_url
+        result["player_id"] = extract_player_id(player_url)
+        result["discovery"] = discovery
+
+        # If the original page has no usable frame, open player directly in the same browser context.
+        player_page = None
+        target = frame if frame and frame.url == player_url else None
+        if target is None:
+            player_page = context.new_page()
+            player_page.on("response", on_response)
+            player_page.goto(player_url, wait_until="domcontentloaded", timeout=60000)
+            player_page.wait_for_timeout(4000)
+            target = player_page.main_frame
+
+        # Give javplayer a chance to call /stream by itself.
+        page.wait_for_timeout(3000)
+        if player_page:
+            player_page.wait_for_timeout(2000)
 
         if captured:
             result["stream_api_url"] = captured.get("url")
             data = captured.get("json") or {}
         else:
-            data = frame.evaluate(r"""
+            data = target.evaluate(r"""
                 async () => {
                     const m = location.pathname.match(/\/e\/([^/?#]+)/);
                     if (!m) return {error: 'no player id'};
@@ -92,7 +184,9 @@ def resolve_manko(url, verify=False):
                     new URLSearchParams(location.search).forEach((value, key) => u.searchParams.set(key, value));
                     u.searchParams.set('id', m[1]);
                     const r = await fetch(u.toString());
-                    return {api_url: u.toString(), body: await r.json()};
+                    let body = {};
+                    try { body = await r.json(); } catch (e) { body = {raw: await r.text()}; }
+                    return {api_url: u.toString(), status: r.status, body};
                 }
             """)
             if data.get("error"):
@@ -110,7 +204,7 @@ def resolve_manko(url, verify=False):
 
         if verify and result["stream_url"]:
             try:
-                vr = frame.evaluate(r"""
+                vr = target.evaluate(r"""
                     async (u) => {
                         const r = await fetch(u, {headers: {'Accept':'*/*'}});
                         const text = await r.text();
