@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.3.2",
-  "description": "Fast full-site Manko crawler with resume, Vietnamese metadata and first-stream collection.",
-  "permissions": ["tabs", "storage", "scripting"],
+  "version": "3.4.0",
+  "description": "Parallel full-site Manko crawler with 3 workers, auto-retry, resume, Vietnamese metadata and first-stream collection.",
+  "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
     "https://javplayer.cc/*",
