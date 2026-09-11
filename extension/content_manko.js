@@ -43,6 +43,16 @@
     return uniq([...document.querySelectorAll('a[href*="actor"],a[href*="actress"],a[href*="star"]')].map(text));
   }
 
+  function genres(){
+    const raw=field('Genre')||field('Genres')||field('Category')||field('Categories');
+    const list=[];
+    if(raw) list.push(...raw.split(/[,|]/).map(x=>x.trim()));
+    for(const a of document.querySelectorAll('a[href*="genre"],a[href*="category"],a[href*="cate-list"]')){
+      const t=text(a);if(t&&t.length<80)list.push(t);
+    }
+    return uniq(list).filter(x=>x && !/^genre$/i.test(x) && !/^category$/i.test(x)).slice(0,40);
+  }
+
   function snapshotUrls(){
     const out=[];
     const add=src=>{try{const u=new URL(src,location.href);if(/^https?:$/.test(u.protocol))out.push(u.href)}catch{}};
@@ -51,36 +61,24 @@
       let box=h.parentElement;
       for(let depth=0;box&&depth<4;depth++,box=box.parentElement){
         const imgs=[...box.querySelectorAll('img')];
-        if(imgs.length>=2){
-          for(const img of imgs)add(img.currentSrc||img.src||img.getAttribute('data-src')||img.getAttribute('data-lazy-src'));
-          break;
-        }
+        if(imgs.length>=2){for(const img of imgs)add(img.currentSrc||img.src||img.getAttribute('data-src')||img.getAttribute('data-lazy-src'));break}
       }
     }
     for(const img of document.querySelectorAll('img')){
       const src=img.currentSrc||img.src||img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||'';
-      const low=src.toLowerCase();
-      if(/snapshot|sample|scene|screenshot|thumb/.test(low))add(src);
+      if(/snapshot|sample|scene|screenshot|thumb/i.test(src))add(src);
     }
-    const p=poster();
-    return uniq(out).filter(u=>u!==p).slice(0,24);
+    const p=poster();return uniq(out).filter(u=>u!==p).slice(0,24);
   }
 
   function metadata() {
     const description = document.querySelector('meta[name="description"]')?.content ||
       text(document.querySelector('[class*="description"], [class*="synopsis"], [class*="overview"]'));
     return {
-      description,
-      actors:actors(),
-      code:field('Title'),
-      rating:field('Rating'),
-      runtime:field('Video Duration') || field('Duration') || field('Runtime'),
-      size:field('Size'),
-      releaseDate:field('Release date') || field('Release Date'),
-      studio:field('Maker') || field('Studio'),
-      country:'Japan',
-      language:'Japanese',
-      snapshots:snapshotUrls()
+      description,actors:actors(),genres:genres(),code:field('Title'),rating:field('Rating'),
+      runtime:field('Video Duration') || field('Duration') || field('Runtime'),size:field('Size'),
+      releaseDate:field('Release date') || field('Release Date'),studio:field('Maker') || field('Studio'),
+      country:'Japan',language:'Japanese',snapshots:snapshotUrls()
     };
   }
 
@@ -88,15 +86,10 @@
   function send(){
     if(sent) return true;
     if(isServerError()){
-      sent=true;
-      chrome.runtime.sendMessage({type:'MANKO_PAGE_ERROR',movieUrl:location.href,status:500,error:'Manko HTTP 500'});
-      return true;
+      sent=true;chrome.runtime.sendMessage({type:'MANKO_PAGE_ERROR',movieUrl:location.href,status:500,error:'Manko HTTP 500'});return true;
     }
-    const player=firstPlayer();
-    if(!player) return false;
-    sent=true;
-    chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:[player],playerUrl:player,metadata:metadata()});
-    return true;
+    const player=firstPlayer();if(!player)return false;
+    sent=true;chrome.runtime.sendMessage({type:'MANKO_PLAYER_FOUND',movieId,movieUrl:location.href,title:document.title,poster:poster(),playerUrls:[player],playerUrl:player,metadata:metadata()});return true;
   }
   if(send()) return;
   const obs=new MutationObserver(()=>{if(send())obs.disconnect()});
