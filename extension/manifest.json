@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Manko Stream Collector",
+  "version": "1.0.0",
+  "description": "Resolve Manko movie pages through the user's real browser session and collect javplayer stream URLs.",
+  "permissions": ["tabs", "storage", "downloads"],
+  "host_permissions": [
+    "https://manko.fun/*",
+    "https://javplayer.cc/*"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Manko Collector"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://manko.fun/movie-info/*"],
+      "js": ["content_manko.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://javplayer.cc/e/*"],
+      "js": ["content_javplayer.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
