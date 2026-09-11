@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Runner",
-  "version": "4.0.0",
-  "description": "Final server-driven Manko runner with bounded tabs, automatic cleanup, retries and server-controlled discovery.",
+  "version": "4.0.1",
+  "description": "Server-driven Manko runner with bounded tabs, automatic cleanup, pause/resume controls and retry safety.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
@@ -10,7 +10,7 @@
     "https://manko-api.onrender.com/*"
   ],
   "background": {"service_worker": "runner_final.js"},
-  "action": {"default_title": "Manko Runner"},
+  "action": {"default_title": "Manko Runner","default_popup":"runner_popup.html"},
   "content_scripts": [
     {"matches": ["https://manko.fun/movie-info/*"], "js": ["content_manko.js"], "run_at": "document_idle"},
     {"matches": ["https://javplayer.cc/e/*"], "js": ["content_javplayer.js"], "run_at": "document_idle"}
