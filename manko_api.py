@@ -22,8 +22,7 @@ def sanitize_result(p):
    h=s.get('headers') if isinstance(s.get('headers'),dict) else {'Referer':REFERER};h.setdefault('Referer',REFERER)
    streams.append({'name':s.get('name') or f'#{n}','url':s['url'],'vttUrl':s.get('vttUrl'),'headers':h,'playerId':s.get('playerId'),'playerUrl':s.get('playerUrl')})
  if not streams and str(p.get('streamUrl') or '').startswith(('http://','https://')):streams=[{'name':'#1','url':p['streamUrl'],'vttUrl':p.get('vttUrl'),'headers':p.get('headers') or {'Referer':REFERER},'playerId':p.get('playerId'),'playerUrl':p.get('playerUrl')}]
- meta=p.get('metadata') if isinstance(p.get('metadata'),dict) else {}
- meta.pop('genres',None);meta.pop('genresVi',None);meta.pop('subtitleVi',None)
+ meta=p.get('metadata') if isinstance(p.get('metadata'),dict) else {};meta.pop('genres',None);meta.pop('genresVi',None);meta.pop('subtitleVi',None)
  return {'id':movie_key(p),'title':str(p.get('title') or 'Manko').strip(),'titleVi':str(p.get('titleVi') or meta.get('titleVi') or '').strip(),'movieUrl':str(p.get('movieUrl') or '').strip(),'poster':str(p.get('poster') or '').strip(),'playerId':str(p.get('playerId') or (streams[0].get('playerId') if streams else '') or ''),'playerUrl':str(p.get('playerUrl') or (streams[0].get('playerUrl') if streams else '') or ''),'streamUrl':streams[0]['url'] if streams else '','streams':streams,'subtitleVi':'','metadata':meta,'headers':streams[0].get('headers') if streams else {'Referer':REFERER},'collectedAt':str(p.get('collectedAt') or utcnow()),'updatedAt':utcnow()}
 @app.get('/')
 def root():return jsonify({'service':'manko-api','status':'ok','addon_manifest':'/manifest.json','collector':'/collector/results','stats':'/collector/stats','server_test':'/server-test'})
@@ -59,8 +58,7 @@ def result():
 def metadata_update():
  p=request.get_json(silent=True) or {};url=str(p.get('movieUrl') or '')
  if not url.startswith('https://manko.fun/movie-info/'):return jsonify({'ok':False,'error':'invalid movieUrl'}),400
- k=movie_key({'movieUrl':url});incoming=p.get('metadata') if isinstance(p.get('metadata'),dict) else {}
- clean={x:v for x,v in incoming.items() if x not in ('genres','genresVi','subtitleVi')}
+ k=movie_key({'movieUrl':url});incoming=p.get('metadata') if isinstance(p.get('metadata'),dict) else {};clean={x:v for x,v in incoming.items() if x not in ('genres','genresVi','subtitleVi')}
  with STORE_LOCK:
   s=load_store();movies=s.setdefault('movies',{});old=movies.get(k)
   if not old:return jsonify({'ok':False,'error':'movie not found','id':k}),404
@@ -78,11 +76,15 @@ def error():
 @app.post('/collector/catalog')
 def catpost():
  p=request.get_json(silent=True) or {};urls=list(dict.fromkeys(str(x) for x in p.get('urls',[]) if str(x).startswith('https://manko.fun/movie-info/')))
- with STORE_LOCK:s=load_store();s['catalog']={'total':len(urls),'urls':urls,'pageUrl':p.get('pageUrl'),'updatedAt':utcnow()};save_store(s)
- return jsonify({'ok':True,'total':len(urls)})
+ with STORE_LOCK:
+  s=load_store();old=s.get('catalog') or {};old_urls=old.get('urls') or []
+  # The submitted list is authoritative homepage order. Keep unseen old URLs at the tail so partial scans never delete prior movies.
+  merged=urls+[u for u in old_urls if u not in set(urls)]
+  s['catalog']={'total':len(merged),'urls':merged,'pageUrl':p.get('pageUrl'),'updatedAt':utcnow()};save_store(s)
+ return jsonify({'ok':True,'total':len(merged),'submitted':len(urls)})
 @app.get('/collector/results')
 def results():
- a=list((load_store().get('movies') or {}).values());a.sort(key=lambda x:x.get('collectedAt') or '',reverse=True);skip=max(0,int(request.args.get('skip',0)));limit=min(500,max(1,int(request.args.get('limit',100))));return jsonify({'total':len(a),'items':a[skip:skip+limit]})
+ s=load_store();movies=s.get('movies') or {};order=(s.get('catalog') or {}).get('urls') or [];byurl={x.get('movieUrl'):x for x in movies.values()};a=[byurl[u] for u in order if u in byurl];seen={x.get('id') for x in a};a.extend(sorted((x for x in movies.values() if x.get('id') not in seen),key=lambda x:x.get('collectedAt') or '',reverse=True));skip=max(0,int(request.args.get('skip',0)));limit=min(500,max(1,int(request.args.get('limit',100))));return jsonify({'total':len(a),'items':a[skip:skip+limit]})
 @app.get('/collector/stats')
 def stats():
  s=load_store();c=s.get('catalog') or {};n=len(s.get('movies',{}));e=len(s.get('errors',{}));t=c.get('total');return jsonify({'catalogTotal':t,'resolved':n,'errors':e,'remaining':max(0,t-n-e) if isinstance(t,int) else None,'catalogUpdatedAt':c.get('updatedAt')})
