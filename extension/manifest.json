@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Manko Test 10",
-  "version": "2.0.1",
-  "description": "Fresh 10-movie Manko test: Vietnamese metadata, multiple streams and one Vietnamese subtitle.",
+  "name": "Manko Full Collector",
+  "version": "3.0.0",
+  "description": "Full-site Manko collector with Vietnamese metadata, multiple streams and automatic resume.",
   "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": [
     "https://manko.fun/*",
@@ -11,23 +11,10 @@
     "https://translate.googleapis.com/*",
     "https://manko-api.onrender.com/*"
   ],
-  "background": {
-    "service_worker": "service_worker_main.js"
-  },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Manko Test 10"
-  },
+  "background": {"service_worker": "service_worker_main.js"},
+  "action": {"default_popup": "popup.html", "default_title": "Manko Full Collector"},
   "content_scripts": [
-    {
-      "matches": ["https://manko.fun/movie-info/*"],
-      "js": ["content_manko.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://javplayer.cc/e/*"],
-      "js": ["content_javplayer.js"],
-      "run_at": "document_idle"
-    }
+    {"matches": ["https://manko.fun/movie-info/*"], "js": ["content_manko.js"], "run_at": "document_idle"},
+    {"matches": ["https://javplayer.cc/e/*"], "js": ["content_javplayer.js"], "run_at": "document_idle"}
   ]
 }
