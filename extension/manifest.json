@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manko Full Collector",
-  "version": "3.4.1",
-  "description": "Safer full-site Manko crawler with 2 workers, fast HTTP 500 detection, auto-retry, resume, Vietnamese metadata and first-stream collection.",
+  "version": "3.4.2",
+  "description": "Safer full-site Manko crawler with 2 workers, HTTP 500 retry, Vietnamese metadata, first-stream collection and Snapshot metadata.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://manko.fun/*",
