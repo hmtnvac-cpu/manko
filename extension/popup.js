@@ -17,7 +17,11 @@ async function refresh(){
   const state = await chrome.runtime.sendMessage({type:'GET_STATE'});
   show(state);
   const scan = (await chrome.storage.local.get(SCAN_KEY))[SCAN_KEY];
-  if (scan) $('scanInfo').textContent = `Catalog scan: ${scan.count} unique movie URL(s) from ${scan.pageUrl}`;
+  const sync = await chrome.runtime.sendMessage({type:'GET_SYNC_STATUS'}).catch(()=>null);
+  if (scan) {
+    const suffix = sync ? ` • Sync ${sync.running?'running':(sync.ok?'OK':'idle/error')} ${sync.resultsSynced||0}/${sync.resultsTotal||0}` : '';
+    $('scanInfo').textContent = `Catalog scan: ${scan.count} unique movie URL(s) from ${scan.pageUrl}${suffix}`;
+  }
   return state;
 }
 
@@ -68,6 +72,13 @@ $('test10').onclick = async () => {
   setTimeout(refresh,500);
 };
 
+$('syncAll').onclick = async () => {
+  $('scanInfo').textContent = 'Syncing all local Manko data to server…';
+  const r = await chrome.runtime.sendMessage({type:'SYNC_ALL'});
+  $('scanInfo').textContent = r?.ok ? `Sync complete: ${r.resultsSynced}/${r.resultsTotal} results, ${r.errorsSynced}/${r.errorsTotal} errors.` : `Sync finished with issue: ${r?.lastError || 'unknown'}`;
+  setTimeout(refresh,500);
+};
+
 $('refresh').onclick = refresh;
 
 $('clear').onclick = async () => {
@@ -84,5 +95,6 @@ $('export').onclick = async () => {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 };
 
+chrome.runtime.sendMessage({type:'AUTO_RESTORE'}).catch(()=>{});
 refresh();
 setInterval(refresh, 2000);
