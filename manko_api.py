@@ -1,4 +1,4 @@
-import os, json, hashlib, base64, re
+import os, json, hashlib
 from datetime import datetime, timezone, timedelta
 from threading import RLock
 from urllib.parse import urlparse
@@ -94,58 +94,10 @@ def upsert_probe(payload):
         if t:t['status']='done';t['leaseUntil']=None;t['updatedAt']=now()
     return {'url':url,'streams':len(streams),'resources':len(resources)}
 
-
-def _enc_live(eid):
-    return 'film4k_live_'+base64.urlsafe_b64encode(str(eid).encode()).decode().rstrip('=')
-
-def _dec_live(sid):
-    try:
-        raw=str(sid).split(':',1)[0]
-        if not raw.startswith('film4k_live_'):return ''
-        b=raw[len('film4k_live_'):];b+='='*((4-len(b)%4)%4)
-        return base64.urlsafe_b64decode(b.encode()).decode()
-    except Exception:return ''
-
-def _sports_probe_events():
-    found={}
-    with LOCK:
-        probes=list((STATE.get('probes') or {}).values())
-    for p in probes:
-        if '/sports' not in str(p.get('pageUrl') or ''):continue
-        for r in p.get('resources') or []:
-            u=str((r or {}).get('url') or '')
-            m=re.search(r'/api/sports/live/([^/?#]+)',u)
-            if not m:continue
-            eid=m.group(1)
-            label=re.sub(r'-20\d{10,}$','',eid).replace('-',' ').strip()
-            name=' '.join(w.capitalize() for w in label.split()) or eid
-            found[eid]={'id':_enc_live(eid),'type':'movie','name':'🔴 '+name,'posterShape':'landscape','description':'Film4K Live Sports','website':'https://film4k.net/sports'}
-    return list(found.values())
-
-@app.before_request
-def film4k_sports_fallback():
-    path=request.path
-    if path.startswith('/film4k/catalog/movie/film4k_sports'):
-        metas=_sports_probe_events()
-        if metas:
-            try:skip=max(0,int(request.args.get('skip') or 0))
-            except Exception:skip=0
-            return jsonify({'metas':metas[skip:skip+60]})
-    if path.startswith('/film4k/meta/movie/film4k_live_'):
-        sid=path.rsplit('/',1)[-1].rsplit('.json',1)[0]
-        eid=_dec_live(sid)
-        if eid:
-            label=re.sub(r'-20\d{10,}$','',eid).replace('-',' ').strip()
-            name=' '.join(w.capitalize() for w in label.split()) or eid
-            return jsonify({'meta':{'id':_enc_live(eid),'type':'movie','name':'🔴 '+name,'posterShape':'landscape','description':'Film4K Live Sports','website':'https://film4k.net/sports'}})
-
 @app.get('/')
 def root():return jsonify({'service':'film4k-api','ok':True,'manifest':'/film4k/manifest.json','store':'neon' if DB_URL else 'memory'})
 @app.get('/health')
 def health():return jsonify({'ok':True,'service':'film4k-api','database':bool(DB_URL)})
-@app.get('/film4k/sports/debug.json')
-def sports_debug():
-    items=_sports_probe_events();return jsonify({'ok':True,'count':len(items),'items':items})
 
 @app.post('/film4k/probe')
 def probe():
