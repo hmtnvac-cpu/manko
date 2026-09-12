@@ -1,5 +1,6 @@
 from flask import jsonify, request, Response
 import json, time, base64, re, http.cookiejar
+from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qs, unquote_plus, urlparse, quote, unquote, urljoin
 from urllib.request import Request, urlopen, build_opener, HTTPCookieProcessor
 
@@ -8,17 +9,18 @@ _CACHE = {}
 _CACHE_TTL = 90
 CATALOG_CACHE_TTL = 180
 SPORTS_CACHE_TTL = 20
+VN_TZ = timezone(timedelta(hours=7))
 
 MANIFEST = {
     "id": "community.film4k.addon",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "name": "Film4K",
-    "description": "Film4K.net addon with movies, series and live sports.",
+    "description": "Film4K.net addon with movies, series and sports schedule.",
     "resources": ["catalog", "meta", "stream"],
     "types": ["movie", "series"],
     "idPrefixes": ["film4k_"],
     "catalogs": [
-        {"type": "movie", "id": "film4k_sports", "name": "🔴 FILM4K • LIVE SPORTS", "extra": [{"name":"skip","isRequired":False}]},
+        {"type": "movie", "id": "film4k_sports", "name": "🏟️ FILM4K • SPORTS", "extra": [{"name":"skip","isRequired":False}]},
         {"type": "movie", "id": "film4k_movies", "name": "🎬 FILM4K • MOVIES", "extra": [{"name":"skip","isRequired":False},{"name":"search","isRequired":False}]},
         {"type": "series", "id": "film4k_series", "name": "📺 FILM4K • SERIES", "extra": [{"name":"skip","isRequired":False},{"name":"search","isRequired":False}]}
     ]
@@ -150,18 +152,20 @@ def _resolve_sources(slug,sid):
     if not sources and node is detail:sources=_source_list({'sources':detail.get('sources') or []})
     return sources
 
-# Sports / TV resolver
-
+# Sports / TV resolver - mirrors /api/sports/home from Film4K.
 def _sports_name(x):
+    home=x.get('home') or x.get('homeTeam') or x.get('home_team');away=x.get('away') or x.get('awayTeam') or x.get('away_team')
+    def n(v):
+        if isinstance(v,str):return v.strip()
+        if isinstance(v,dict):return str(v.get('name') or v.get('title') or '').strip()
+        return ''
+    hn,an=n(home),n(away)
+    if hn and an:return hn+' vs '+an
+    if hn:return hn
     for k in ['title','name','label','eventName','event_name','matchName','match_name']:
         v=x.get(k)
         if isinstance(v,str) and v.strip():return v.strip()
-    home=x.get('home') or x.get('homeTeam') or x.get('home_team');away=x.get('away') or x.get('awayTeam') or x.get('away_team')
-    def n(v):
-        if isinstance(v,str):return v
-        if isinstance(v,dict):return str(v.get('name') or v.get('title') or '')
-        return ''
-    hn,an=n(home),n(away);return (hn+' vs '+an).strip(' vs ') if hn or an else ''
+    return ''
 def _sports_event_id(x):
     for k in ['slug','eventSlug','event_slug','matchSlug','match_slug','eventId','event_id','matchId','match_id','id','key']:
         v=x.get(k)
@@ -178,19 +182,34 @@ def _sports_home(force=False):
     key='sports:home';cached=_CACHE.get(key)
     if not force and cached and time.time()-cached[0]<SPORTS_CACHE_TTL:return cached[1]
     found={}
-    for path in ['/api/sports/home','/api/tv/events']:
-        try:_walk_sports(_json_http(BASE+path),found)
-        except Exception:pass
+    try:_walk_sports(_json_http(BASE+'/api/sports/home'),found)
+    except Exception:pass
     items=list(found.values());_CACHE[key]=(time.time(),items);return items
 
 def _sports_find(eid):return next((x for x in _sports_home() if _sports_event_id(x)==eid),{})
+def _sports_state(x):
+    try:ms=int(x.get('time') or 0)
+    except Exception:ms=0
+    if x.get('live') is True:return ('🔴 LIVE',0,ms)
+    if ms and ms>int(time.time()*1000):return ('🕒 SẮP DIỄN RA',1,ms)
+    return ('⚫ ĐÃ KẾT THÚC',2,ms)
+def _sports_clock(ms):
+    if not ms:return ''
+    try:return datetime.fromtimestamp(ms/1000,timezone.utc).astimezone(VN_TZ).strftime('%d/%m %H:%M')
+    except Exception:return ''
 def _sports_meta(x):
     eid=_sports_event_id(x);name=_sports_name(x)
     if not eid or not name:return None
-    poster=x.get('poster') or x.get('image') or x.get('thumbnail') or ''
+    state,_,ms=_sports_state(x);clock=_sports_clock(ms)
     league=x.get('league') or x.get('competition') or x.get('sport') or ''
     if isinstance(league,dict):league=league.get('name') or league.get('title') or ''
-    return {'id':_live_sid(eid),'type':'movie','name':'🔴 '+name,'poster':poster or None,'posterShape':'landscape','description':str(league or 'Film4K Live Sports'),'website':BASE+'/sports'}
+    poster=x.get('poster') or x.get('image') or x.get('thumbnail') or x.get('leagueFlag') or x.get('homeFlag') or x.get('awayFlag') or ''
+    score=''
+    if state=='🔴 LIVE' and x.get('away'):
+        score=f" • {x.get('homeScore',0)}-{x.get('awayScore',0)}"
+    title=f"{state} • {name}"
+    desc=' • '.join(v for v in [str(league or ''),clock] if v)+score
+    return {'id':_live_sid(eid),'type':'movie','name':title,'poster':poster or None,'posterShape':'landscape','description':desc or 'Film4K Sports','website':BASE+'/sports'}
 def _walk_urls(obj,out):
     if isinstance(obj,dict):
         for v in obj.values():_walk_urls(v,out)
@@ -209,19 +228,15 @@ def _find_matching_nodes(obj,eid,out):
         for v in obj:_find_matching_nodes(v,eid,out)
 def _sports_streams(eid):
     urls=[]
-    # 1) exact live resolver
     try:_walk_urls(_json_http(BASE+'/api/sports/live/'+quote(eid,safe='')),urls)
     except Exception:pass
-    # 2) event object from sports home / tv events
     event=_sports_find(eid);_walk_urls(event,urls)
-    # 3) inspect TV events/channels and only walk nodes that contain this event id
     for path in ['/api/tv/events','/api/tv/channels']:
         try:
             data=_json_http(BASE+path);nodes=[];_find_matching_nodes(data,eid,nodes)
             for node in nodes:_walk_urls(node,urls)
         except Exception:pass
     seen=set();return [u for u in urls if not (u in seen or seen.add(u))]
-
 def _captured_sports_hls(store):
     urls=[];seen=set()
     for p in (store.get('probes') or {}).values():
@@ -231,7 +246,6 @@ def _captured_sports_hls(store):
             if '.m3u8' in u.lower() and u.startswith(('http://','https://')) and u not in seen:
                 seen.add(u);urls.append(u)
     return urls
-
 
 def _allowed_proxy_url(u):
     try:
@@ -283,7 +297,9 @@ def register_film4k_addon(app,load_store):
         params=_extra(extra)
         try:skip=max(0,int(params.get('skip') or request.args.get('skip') or 0))
         except Exception:skip=0
-        metas=[m for m in (_sports_meta(x) for x in _sports_home(force=True)) if m]
+        events=_sports_home(force=True)
+        events.sort(key=lambda x:(_sports_state(x)[1],_sports_state(x)[2] or 0))
+        metas=[m for m in (_sports_meta(x) for x in events) if m]
         return jsonify({'metas':metas[skip:skip+100]})
     @app.get('/film4k/catalog/movie/film4k_movies.json')
     @app.get('/film4k/catalog/movie/film4k_movies/<path:extra>.json')
@@ -301,7 +317,6 @@ def register_film4k_addon(app,load_store):
         base=request.host_url.rstrip('/');eid=_live_id(sid)
         if eid:
             targets=_sports_streams(eid)
-            # If Film4K's event API hides its source, expose HLS links captured while Sports is actually playing.
             if not targets:targets=_captured_sports_hls(load_store())
             streams=[]
             for i,target in enumerate(targets,1):
@@ -316,6 +331,10 @@ def register_film4k_addon(app,load_store):
     @app.get('/film4k/sports/streams-debug.json')
     def sports_streams_debug():
         store=load_store();return jsonify({'captured':_captured_sports_hls(store),'count':len(_captured_sports_hls(store))})
+    @app.get('/film4k/sports/debug.json')
+    def sports_debug():
+        events=_sports_home(force=True)
+        return jsonify({'count':len(events),'live':sum(1 for x in events if x.get('live') is True),'upcoming':sum(1 for x in events if _sports_state(x)[1]==1),'ended':sum(1 for x in events if _sports_state(x)[1]==2),'items':[{'slug':_sports_event_id(x),'name':_sports_name(x),'status':_sports_state(x)[0],'time':_sports_clock(_sports_state(x)[2])} for x in events[:200]]})
     @app.get('/film4k/hls')
     def film4k_hls_proxy():
         target=unquote(str(request.args.get('u') or ''))
