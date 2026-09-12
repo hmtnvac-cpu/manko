@@ -11,14 +11,14 @@ SPORTS_CACHE_TTL = 20
 
 MANIFEST = {
     "id": "community.film4k.addon",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "name": "Film4K",
     "description": "Film4K.net addon with movies, series and live sports.",
     "resources": ["catalog", "meta", "stream"],
-    "types": ["movie", "series", "tv"],
+    "types": ["movie", "series"],
     "idPrefixes": ["film4k_"],
     "catalogs": [
-        {"type": "tv", "id": "film4k_sports", "name": "🔴 FILM4K • LIVE SPORTS", "extra": [{"name":"skip","isRequired":False}]},
+        {"type": "movie", "id": "film4k_sports", "name": "🔴 FILM4K • LIVE SPORTS", "extra": [{"name":"skip","isRequired":False}]},
         {"type": "movie", "id": "film4k_movies", "name": "🎬 FILM4K • MOVIES", "extra": [{"name":"skip","isRequired":False},{"name":"search","isRequired":False}]},
         {"type": "series", "id": "film4k_series", "name": "📺 FILM4K • SERIES", "extra": [{"name":"skip","isRequired":False},{"name":"search","isRequired":False}]}
     ]
@@ -26,16 +26,16 @@ MANIFEST = {
 
 
 def _extra(extra):
-    out = {}
-    if not extra: return out
-    raw = unquote_plus(str(extra))
+    out={}
+    if not extra:return out
+    raw=unquote_plus(str(extra))
     try:
-        value = json.loads(raw)
-        if isinstance(value, dict): return value
-    except Exception: pass
+        value=json.loads(raw)
+        if isinstance(value,dict):return value
+    except Exception:pass
     try:
-        for k, v in parse_qs(raw, keep_blank_values=True).items(): out[k] = v[-1] if v else ""
-    except Exception: pass
+        for k,v in parse_qs(raw,keep_blank_values=True).items():out[k]=v[-1] if v else ""
+    except Exception:pass
     return out
 
 
@@ -45,83 +45,73 @@ def _headers(extra=None):
     return h
 
 
-def _json_http(url, method="GET", body=None):
-    headers = _headers({"Accept":"application/json"})
-    data = None
+def _json_http(url,method="GET",body=None):
+    headers=_headers({"Accept":"application/json"});data=None
     if body is not None:
-        data = json.dumps(body).encode("utf-8") if not isinstance(body, (bytes, bytearray)) else body
-        headers["Content-Type"] = "application/json"
-    req = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+        data=json.dumps(body).encode("utf-8") if not isinstance(body,(bytes,bytearray)) else body
+        headers["Content-Type"]="application/json"
+    req=Request(url,data=data,headers=headers,method=method)
+    with urlopen(req,timeout=15) as r:return json.loads(r.read().decode("utf-8","replace"))
 
 
-def _detail(slug, force=False):
-    if not slug: return None
-    key="detail:"+slug
-    cached = _CACHE.get(key)
-    if not force and cached and time.time() - cached[0] < _CACHE_TTL: return cached[1]
+def _detail(slug,force=False):
+    if not slug:return None
+    key="detail:"+slug;cached=_CACHE.get(key)
+    if not force and cached and time.time()-cached[0]<_CACHE_TTL:return cached[1]
     try:
-        data = _json_http(f"{BASE}/api/watch/{slug}")
-        _CACHE[key] = (time.time(), data)
-        return data
-    except Exception:
-        return None
+        data=_json_http(f"{BASE}/api/watch/{slug}");_CACHE[key]=(time.time(),data);return data
+    except Exception:return None
 
 
-def _enc_slug(slug): return base64.urlsafe_b64encode(str(slug).encode()).decode().rstrip('=')
+def _enc_slug(slug):return base64.urlsafe_b64encode(str(slug).encode()).decode().rstrip('=')
 def _dec_slug(s):
     try:
         raw=str(s).split(':',1)[0]
         if raw.startswith('film4k_s_'):
-            b=raw[len('film4k_s_'):]; b += '='*((4-len(b)%4)%4)
-            return base64.urlsafe_b64decode(b.encode()).decode()
-    except Exception: pass
+            b=raw[len('film4k_s_'):];b+='='*((4-len(b)%4)%4);return base64.urlsafe_b64decode(b.encode()).decode()
+    except Exception:pass
     return ''
-def _sid_for_slug(slug): return 'film4k_s_'+_enc_slug(slug)
-
-def _live_sid(event_id): return 'film4k_live_'+_enc_slug(event_id)
+def _sid_for_slug(slug):return 'film4k_s_'+_enc_slug(slug)
+def _live_sid(event_id):return 'film4k_live_'+_enc_slug(event_id)
 def _live_id(sid):
     try:
         raw=str(sid).split(':',1)[0]
-        if not raw.startswith('film4k_live_'): return ''
-        b=raw[len('film4k_live_'):]; b += '='*((4-len(b)%4)%4)
-        return base64.urlsafe_b64decode(b.encode()).decode()
+        if not raw.startswith('film4k_live_'):return ''
+        b=raw[len('film4k_live_'):];b+='='*((4-len(b)%4)%4);return base64.urlsafe_b64decode(b.encode()).decode()
     except Exception:return ''
 
 
 def _pick_title(movie):
-    title = movie.get("title") or movie.get("name") or {}
-    if isinstance(title, dict): return title.get("vi") or title.get("en") or next(iter(title.values()), "Film4K")
+    title=movie.get("title") or movie.get("name") or {}
+    if isinstance(title,dict):return title.get("vi") or title.get("en") or next(iter(title.values()),"Film4K")
     return str(title or "Film4K")
 def _poster(movie):
-    p = movie.get("poster") or movie.get("image") or {}
-    return (p.get("vi") or p.get("en") or next(iter(p.values()), "")) if isinstance(p, dict) else str(p or "")
+    p=movie.get("poster") or movie.get("image") or {}
+    return (p.get("vi") or p.get("en") or next(iter(p.values()),"")) if isinstance(p,dict) else str(p or "")
 def _overview(movie):
-    o = movie.get("overview") or movie.get("description") or {}
-    return (o.get("vi") or o.get("en") or next(iter(o.values()), "")) if isinstance(o, dict) else str(o or "")
+    o=movie.get("overview") or movie.get("description") or {}
+    return (o.get("vi") or o.get("en") or next(iter(o.values()),"")) if isinstance(o,dict) else str(o or "")
 def _media_type_from_movie(movie):
-    t=str(movie.get('mediaType') or movie.get('type') or '').lower()
-    return 'series' if t in {'tv','series','show'} else 'movie'
+    t=str(movie.get('mediaType') or movie.get('type') or '').lower();return 'series' if t in {'tv','series','show'} else 'movie'
 
 
-def _walk_movies(obj, out):
-    if isinstance(obj, dict):
-        slug=obj.get('slug'); title=obj.get('title') or obj.get('name')
-        if isinstance(slug,str) and slug and title and slug not in out: out[slug]=obj
-        for v in obj.values(): _walk_movies(v,out)
+def _walk_movies(obj,out):
+    if isinstance(obj,dict):
+        slug=obj.get('slug');title=obj.get('title') or obj.get('name')
+        if isinstance(slug,str) and slug and title and slug not in out:out[slug]=obj
+        for v in obj.values():_walk_movies(v,out)
     elif isinstance(obj,list):
-        for v in obj: _walk_movies(v,out)
+        for v in obj:_walk_movies(v,out)
 
 
 def _live_catalog():
-    key='catalog:live'; cached=_CACHE.get(key)
-    if cached and time.time()-cached[0] < CATALOG_CACHE_TTL:return cached[1]
+    key='catalog:live';cached=_CACHE.get(key)
+    if cached and time.time()-cached[0]<CATALOG_CACHE_TTL:return cached[1]
     found={}
     for path in ['/api/home','/api/explore','/api/movies','/api/series']:
         try:_walk_movies(_json_http(BASE+path),found)
         except Exception:pass
-    items=list(found.values()); _CACHE[key]=(time.time(),items); return items
+    items=list(found.values());_CACHE[key]=(time.time(),items);return items
 
 
 def _catalog_meta(movie):
@@ -134,9 +124,8 @@ def _catalog_meta(movie):
 def _media_type(detail):
     movie=(detail or {}).get('movie') or {}
     return 'series' if str(movie.get('mediaType') or '').lower() in {'tv','series'} or len((detail or {}).get('episodes') or [])>1 else 'movie'
-
 def _absolute_source(url):
-    u=str(url or ''); return u if u.startswith(('http://','https://')) else BASE+(u if u.startswith('/') else '/'+u)
+    u=str(url or '');return u if u.startswith(('http://','https://')) else BASE+(u if u.startswith('/') else '/'+u)
 def _source_list(node):
     out=[]
     for src in (node or {}).get('sources') or []:
@@ -148,7 +137,7 @@ def _source_list(node):
 def _meta_from_slug(slug):
     detail=_detail(slug)
     if not detail:return None
-    movie=detail.get('movie') or {}; typ=_media_type(detail)
+    movie=detail.get('movie') or {};typ=_media_type(detail)
     out={'id':_sid_for_slug(slug),'type':typ,'name':_pick_title(movie),'poster':_poster(movie) or None,'background':movie.get('backdrop') or None,'posterShape':'poster','description':_overview(movie),'website':f'{BASE}/watch/{slug}'}
     genres=movie.get('genres') or {}
     if isinstance(genres,dict):genres=genres.get('vi') or genres.get('en') or []
@@ -164,7 +153,7 @@ def _meta_from_slug(slug):
 
 
 def _resolve_sources(slug,sid):
-    detail=_detail(slug, force=True)
+    detail=_detail(slug,force=True)
     if not detail:return []
     parts=str(sid).split(':');node=detail
     if len(parts)>=3:
@@ -181,23 +170,18 @@ def _sports_name(x):
     for k in ['title','name','label','eventName','event_name']:
         v=x.get(k)
         if isinstance(v,str) and v.strip():return v.strip()
-    home=x.get('home') or x.get('homeTeam') or x.get('home_team')
-    away=x.get('away') or x.get('awayTeam') or x.get('away_team')
+    home=x.get('home') or x.get('homeTeam') or x.get('home_team');away=x.get('away') or x.get('awayTeam') or x.get('away_team')
     def n(v):
         if isinstance(v,str):return v
         if isinstance(v,dict):return str(v.get('name') or v.get('title') or '')
         return ''
-    hn,an=n(home),n(away)
-    return (hn+' vs '+an).strip(' vs ') if hn or an else ''
-
+    hn,an=n(home),n(away);return (hn+' vs '+an).strip(' vs ') if hn or an else ''
 
 def _sports_event_id(x):
     for k in ['slug','eventId','event_id','id','key']:
         v=x.get(k)
         if isinstance(v,(str,int)) and str(v).strip():return str(v).strip()
     return ''
-
-
 def _walk_sports(obj,out):
     if isinstance(obj,dict):
         eid=_sports_event_id(obj);name=_sports_name(obj)
@@ -205,70 +189,42 @@ def _walk_sports(obj,out):
         for v in obj.values():_walk_sports(v,out)
     elif isinstance(obj,list):
         for v in obj:_walk_sports(v,out)
-
-
 def _sports_home(force=False):
     key='sports:home';cached=_CACHE.get(key)
     if not force and cached and time.time()-cached[0]<SPORTS_CACHE_TTL:return cached[1]
     try:data=_json_http(BASE+'/api/sports/home')
     except Exception:data={}
-    found={};_walk_sports(data,found)
-    items=list(found.values());_CACHE[key]=(time.time(),items);return items
+    found={};_walk_sports(data,found);items=list(found.values());_CACHE[key]=(time.time(),items);return items
 
-
-def _sports_find(eid):
-    return next((x for x in _sports_home() if _sports_event_id(x)==eid),{})
-
-
-def _extract_media_urls(obj,out=None):
-    out=out or []
+def _sports_find(eid):return next((x for x in _sports_home() if _sports_event_id(x)==eid),{})
+def _sports_meta(x):
+    eid=_sports_event_id(x);name=_sports_name(x)
+    if not eid or not name:return None
+    poster=x.get('poster') or x.get('image') or x.get('thumbnail') or ''
+    league=x.get('league') or x.get('competition') or x.get('sport') or ''
+    if isinstance(league,dict):league=league.get('name') or league.get('title') or ''
+    return {'id':_live_sid(eid),'type':'movie','name':'🔴 '+name,'poster':poster or None,'posterShape':'landscape','description':str(league or 'Film4K Live Sports'),'website':BASE+'/sports'}
+def _walk_urls(obj,out):
     if isinstance(obj,dict):
-        for k,v in obj.items():
-            if isinstance(v,str):
-                u=_absolute_source(v) if v.startswith('/') else v
-                low=u.lower()
-                if (u.startswith(('http://','https://')) and any(x in low for x in ['.m3u8','.mpd','.mp4'])) and u not in out:out.append(u)
-            else:_extract_media_urls(v,out)
+        for v in obj.values():_walk_urls(v,out)
     elif isinstance(obj,list):
-        for v in obj:_extract_media_urls(v,out)
+        for v in obj:_walk_urls(v,out)
     elif isinstance(obj,str):
-        u=_absolute_source(obj) if obj.startswith('/') else obj
-        if u.startswith(('http://','https://')) and any(x in u.lower() for x in ['.m3u8','.mpd','.mp4']) and u not in out:out.append(u)
-    return out
-
-
-def _sports_detail(eid):
-    key='sports:live:'+eid;cached=_CACHE.get(key)
-    if cached and time.time()-cached[0]<15:return cached[1]
-    try:data=_json_http(BASE+'/api/sports/live/'+quote(eid,safe=''))
-    except Exception:data={}
-    _CACHE[key]=(time.time(),data);return data
-
-
-def _sports_meta(eid):
-    item=_sports_find(eid);name=_sports_name(item) or eid
-    poster=_poster(item) if item else ''
-    desc=str(item.get('description') or item.get('league') or item.get('competition') or '') if item else ''
-    return {'id':_live_sid(eid),'type':'tv','name':name,'poster':poster or None,'background':poster or None,'posterShape':'landscape','description':desc,'website':BASE+'/sports'}
-
-
+        low=obj.lower()
+        if obj.startswith(('http://','https://','/')) and any(x in low for x in ['.m3u8','.mpd','.mp4','/api/tv/','/stream']):out.append(_absolute_source(obj))
 def _sports_streams(eid):
-    detail=_sports_detail(eid);urls=_extract_media_urls(detail,[])
-    if not urls:
-        item=_sports_find(eid);urls=_extract_media_urls(item,[])
-    return urls
+    urls=[]
+    try:_walk_urls(_json_http(BASE+'/api/sports/live/'+quote(eid,safe='')),urls)
+    except Exception:pass
+    event=_sports_find(eid);_walk_urls(event,urls)
+    seen=set();return [u for u in urls if not (u in seen or seen.add(u))]
 
 
 def _allowed_proxy_url(u):
     try:
-        p=urlparse(u);h=(p.hostname or '').lower()
-        return p.scheme=='https' and (h in {'film4k.net','www.film4k.net'} or h.endswith('.b-cdn.net') or h.endswith('.tv360.vn'))
+        p=urlparse(u);h=(p.hostname or '').lower();return p.scheme=='https' and (h in {'film4k.net','www.film4k.net'} or h.endswith('.b-cdn.net') or h.endswith('.tv360.vn') or h=='tv360.vn')
     except Exception:return False
-
-
 def _proxy_url(base_url,target):return base_url+'/film4k/hls?u='+quote(target,safe='')
-
-
 def _rewrite_m3u8(text,source_url,base_url):
     out=[]
     for line in text.splitlines():
@@ -276,31 +232,24 @@ def _rewrite_m3u8(text,source_url,base_url):
         if not s:out.append(line);continue
         if s.startswith('#'):
             def repl(m):
-                raw=m.group(1);absu=urljoin(source_url,raw)
-                return 'URI="'+(_proxy_url(base_url,absu) if _allowed_proxy_url(absu) else absu)+'"'
+                raw=m.group(1);absu=urljoin(source_url,raw);return 'URI="'+(_proxy_url(base_url,absu) if _allowed_proxy_url(absu) else absu)+'"'
             out.append(re.sub(r'URI="([^"]+)"',repl,line))
         else:
-            absu=urljoin(source_url,s)
-            out.append(_proxy_url(base_url,absu) if _allowed_proxy_url(absu) else absu)
+            absu=urljoin(source_url,s);out.append(_proxy_url(base_url,absu) if _allowed_proxy_url(absu) else absu)
     return '\n'.join(out)+'\n'
-
-
 def _fetch_media(target):
     jar=http.cookiejar.CookieJar();opener=build_opener(HTTPCookieProcessor(jar));ticket=''
     try:
         req=Request(BASE+'/api/play-ticket',data=b'',headers=_headers({'Accept':'application/json','Content-Type':'application/json'}),method='POST')
-        with opener.open(req,timeout=10) as r:
-            obj=json.loads(r.read().decode('utf-8','replace'));ticket=str(obj.get('token') or '')
+        with opener.open(req,timeout=10) as r:ticket=str((json.loads(r.read().decode('utf-8','replace')) or {}).get('token') or '')
     except Exception:pass
     extra={}
     if request.headers.get('Range'):extra['Range']=request.headers.get('Range')
-    if ticket:
-        extra['X-Play-Ticket']=ticket;extra['X-Playback-Token']=ticket
-    req=Request(target,headers=_headers(extra),method='GET')
-    return opener.open(req,timeout=20)
+    if ticket:extra['X-Play-Ticket']=ticket;extra['X-Playback-Token']=ticket
+    return opener.open(Request(target,headers=_headers(extra),method='GET'),timeout=20)
 
 
-def register_film4k_addon(app, load_store):
+def register_film4k_addon(app,load_store):
     @app.get('/film4k/manifest.json')
     def film4k_manifest():return jsonify(MANIFEST)
 
@@ -317,16 +266,13 @@ def register_film4k_addon(app, load_store):
             metas.append(meta)
         return jsonify({'metas':metas[skip:skip+40]})
 
-    @app.get('/film4k/catalog/tv/film4k_sports.json')
-    @app.get('/film4k/catalog/tv/film4k_sports/<path:extra>.json')
+    @app.get('/film4k/catalog/movie/film4k_sports.json')
+    @app.get('/film4k/catalog/movie/film4k_sports/<path:extra>.json')
     def film4k_sports(extra=None):
         params=_extra(extra)
         try:skip=max(0,int(params.get('skip') or request.args.get('skip') or 0))
         except Exception:skip=0
-        metas=[]
-        for x in _sports_home(force=True):
-            eid=_sports_event_id(x)
-            if eid:metas.append(_sports_meta(eid))
+        metas=[m for m in (_sports_meta(x) for x in _sports_home(force=True)) if m]
         return jsonify({'metas':metas[skip:skip+60]})
 
     @app.get('/film4k/catalog/movie/film4k_movies.json')
@@ -338,22 +284,20 @@ def register_film4k_addon(app, load_store):
 
     @app.get('/film4k/meta/<typ>/<sid>.json')
     def film4k_meta(typ,sid):
-        if typ=='tv' and str(sid).startswith('film4k_live_'):
-            eid=_live_id(sid);return jsonify({'meta':_sports_meta(eid) if eid else None})
+        eid=_live_id(sid)
+        if eid:return jsonify({'meta':_sports_meta(_sports_find(eid))})
         slug=_dec_slug(sid);return jsonify({'meta':_meta_from_slug(slug) if slug else None})
 
     @app.get('/film4k/stream/<typ>/<path:sid>.json')
     def film4k_stream(typ,sid):
-        base=request.host_url.rstrip('/')
-        if typ=='tv' and str(sid).startswith('film4k_live_'):
-            eid=_live_id(sid);urls=_sports_streams(eid) if eid else []
+        base=request.host_url.rstrip('/');eid=_live_id(sid)
+        if eid:
             streams=[]
-            for i,target in enumerate(urls,1):
-                prox=_proxy_url(base,target) if '.m3u8' in target.lower() and _allowed_proxy_url(target) else target
-                streams.append({'name':f'Live #{i}','title':f"{_sports_meta(eid).get('name','LIVE')} • #{i}",'url':prox,'behaviorHints':{'notWebReady':True}})
+            for i,target in enumerate(_sports_streams(eid),1):
+                prox=_proxy_url(base,target) if _allowed_proxy_url(target) else target
+                streams.append({'name':f'LIVE #{i}','title':f'Film4K Sports • LIVE #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
             return jsonify({'streams':streams})
-        slug=_dec_slug(sid);sources=_resolve_sources(slug,sid) if slug else []
-        streams=[]
+        slug=_dec_slug(sid);sources=_resolve_sources(slug,sid) if slug else [];streams=[]
         for s in sources:
             target=s['url'];prox=_proxy_url(base,target) if '.m3u8' in target.lower() and _allowed_proxy_url(target) else target
             streams.append({'name':s['label'],'title':f"Film4K • {s['label']}",'url':prox,'behaviorHints':{'notWebReady':True}})
@@ -366,19 +310,13 @@ def register_film4k_addon(app, load_store):
         try:
             upstream=_fetch_media(target);body=upstream.read();status=getattr(upstream,'status',200);ct=upstream.headers.get('Content-Type') or 'application/octet-stream'
             if '.m3u8' in target.lower() or 'mpegurl' in ct.lower():
-                text=body.decode('utf-8','replace');body=_rewrite_m3u8(text,target,request.host_url.rstrip('/')).encode('utf-8');ct='application/vnd.apple.mpegurl'
+                body=_rewrite_m3u8(body.decode('utf-8','replace'),target,request.host_url.rstrip('/')).encode('utf-8');ct='application/vnd.apple.mpegurl'
             resp=Response(body,status=status,content_type=ct)
-            for k in ['Content-Range','Accept-Ranges','Content-Length']:
+            for k in ['Content-Range','Accept-Ranges']:
                 v=upstream.headers.get(k)
-                if v and k!='Content-Length':resp.headers[k]=v
-            resp.headers['Access-Control-Allow-Origin']='*';resp.headers['Cache-Control']='no-store'
-            return resp
+                if v:resp.headers[k]=v
+            resp.headers['Access-Control-Allow-Origin']='*';resp.headers['Cache-Control']='no-store';return resp
         except Exception as e:return Response('upstream error: '+str(e),status=502)
-
-    @app.get('/film4k/sports-debug.json')
-    def sports_debug():
-        items=_sports_home(force=True)
-        return jsonify({'total':len(items),'items':[{'id':_sports_event_id(x),'name':_sports_name(x),'streams':_extract_media_urls(x,[])} for x in items[:20]]})
 
     @app.get('/film4k/resolve/<slug>.json')
     def film4k_resolve_debug(slug):
