@@ -68,11 +68,19 @@ def ensure_task(url):
 
 def candidate_streams(resources):
     out=[];seen=set()
+    priority=[]
     for r in resources or []:
         u=str((r or {}).get('url') or '')
         if not u.startswith(('http://','https://')) or u in seen:continue
-        if any(x in u.lower() for x in ['.m3u8','.mpd','.mp4','/stream','playlist','manifest']):
-            seen.add(u);out.append({'name':f'#{len(out)+1}','url':u,'headers':{}})
+        low=u.lower().split('#',1)[0]
+        if low.endswith('/site.webmanifest') or low.endswith('.webmanifest'):continue
+        if '.m3u8' in low or '.mpd' in low or '.mp4' in low or '.webm' in low:
+            seen.add(u)
+            score=0 if '/master.m3u8' in low else 1
+            priority.append((score,u))
+    priority.sort(key=lambda x:x[0])
+    for _,u in priority:
+        out.append({'name':f'#{len(out)+1}','url':u,'headers':{'Referer':'https://film4k.net/'}})
     return out
 
 def upsert_probe(payload):
@@ -81,11 +89,11 @@ def upsert_probe(payload):
     meta=payload.get('meta') if isinstance(payload.get('meta'),dict) else {}
     resources=payload.get('resources') if isinstance(payload.get('resources'),list) else []
     key=task_id(url)
-    STATE['probes'][key]={'pageUrl':url,'meta':meta,'resources':resources[-250:],'updatedAt':now()}
+    STATE['probes'][key]={'pageUrl':url,'meta':meta,'resources':resources[-500:],'updatedAt':now()}
     streams=candidate_streams(resources)
     if streams:
         mid=movie_id(url)
-        STATE['movies'][mid]={'id':mid,'title':meta.get('title') or 'Film4K','titleVi':'','movieUrl':url,'poster':meta.get('poster') or '','streams':streams,'streamUrl':streams[0]['url'],'headers':{},'metadata':{'source':'film4k','description':meta.get('description') or ''},'collectedAt':now(),'updatedAt':now()}
+        STATE['movies'][mid]={'id':mid,'title':meta.get('title') or 'Film4K','titleVi':'','movieUrl':url,'poster':meta.get('poster') or '','streams':streams,'streamUrl':streams[0]['url'],'headers':{'Referer':'https://film4k.net/'},'metadata':{'source':'film4k','description':meta.get('description') or ''},'collectedAt':now(),'updatedAt':now()}
         t=ensure_task(url)
         if t:t['status']='done';t['leaseUntil']=None;t['updatedAt']=now()
     return {'url':url,'streams':len(streams),'resources':len(resources)}
