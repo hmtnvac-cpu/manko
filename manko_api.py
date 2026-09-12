@@ -4,6 +4,7 @@ from threading import RLock
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 import psycopg
+import film4k_addon
 from film4k_addon import register_film4k_addon
 
 app = Flask(__name__)
@@ -12,6 +13,14 @@ LOCK = RLock()
 LEASE_SECONDS = 120
 MAX_RETRIES = 3
 
+# Keep VOD requests on the normal Film4K origin path. Sports-specific endpoints still work
+# with this generic referer, while using /sports globally was making movie/series APIs return empty data.
+def _fixed_headers(extra=None):
+    h={"User-Agent":"Mozilla/5.0","Accept":"*/*","Referer":"https://film4k.net/","Origin":"https://film4k.net"}
+    if extra:h.update(extra)
+    return h
+film4k_addon._headers=_fixed_headers
+film4k_addon.MANIFEST["version"]="0.5.4"
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def valid_url(u):
