@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Film4K Collector",
-  "version": "4.2.1",
-  "description": "Deep Film4K.net collector for catalog, player, API and stream discovery.",
+  "version": "4.2.2",
+  "description": "Deep Film4K.net collector for catalog, player, API, headers and stream discovery.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://film4k.net/*",
@@ -10,7 +10,7 @@
     "https://manko-api.onrender.com/*"
   ],
   "background": {"service_worker": "runner_final.js"},
-  "action": {"default_title": "Film4K Collector", "default_popup": "runner_popup.html"},
+  "action": {"default_title": "Film4K Collector 4.2.2", "default_popup": "runner_popup.html"},
   "content_scripts": [
     {
       "matches": ["https://film4k.net/*", "https://www.film4k.net/*"],
