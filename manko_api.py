@@ -2,6 +2,7 @@ import os
 import hashlib
 from urllib.parse import urlparse
 import manko_api_v2 as core
+from film4k_addon import register_film4k_addon
 
 
 def _is_supported_movie_url(value):
@@ -32,6 +33,7 @@ core.is_movie_url = _is_supported_movie_url
 core.movie_key = _movie_key
 
 app = core.app
+register_film4k_addon(app, core.load_store)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '10000')))
