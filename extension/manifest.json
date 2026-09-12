@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Film4K Collector",
-  "version": "4.2.3",
-  "description": "Deep Film4K.net collector for catalog, sports, TV APIs, headers and stream discovery.",
+  "version": "4.3.0",
+  "description": "Film4K.net collector with explicit HLS/DASH/MP4 link scanning, API capture and runner support.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
     "https://film4k.net/*",
@@ -10,7 +10,7 @@
     "https://manko-api.onrender.com/*"
   ],
   "background": {"service_worker": "runner_final.js"},
-  "action": {"default_title": "Film4K Collector 4.2.3", "default_popup": "runner_popup.html"},
+  "action": {"default_title": "Film4K Collector 4.3.0", "default_popup": "runner_popup.html"},
   "content_scripts": [
     {
       "matches": ["https://film4k.net/*", "https://www.film4k.net/*"],
