@@ -1,12 +1,11 @@
 import os, json, hashlib, base64
 from datetime import datetime, timezone, timedelta
 from threading import RLock
-from urllib.parse import urlparse, quote
-from urllib.request import Request, urlopen
-from flask import Flask, jsonify, request
+from urllib.parse import urlparse, quote, unquote
+from flask import Flask, jsonify, request, Response
 import psycopg
-import film4k_addon
 from film4k_addon import register_film4k_addon
+import film4k_browser_resolver as sports_browser
 
 app = Flask(__name__)
 DB_URL = os.environ.get('DATABASE_URL','').strip()
@@ -28,7 +27,7 @@ def blank(): return {'movies':{},'catalog':{'urls':[],'total':0,'updatedAt':None
 def db_init():
     if not DB_URL:return
     with psycopg.connect(DB_URL) as c:
-        with c.cursor() as cur: cur.execute("CREATE TABLE IF NOT EXISTS app_state (id text PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())")
+        with c.cursor() as cur:cur.execute("CREATE TABLE IF NOT EXISTS app_state (id text PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())")
         c.commit()
 def load_db():
     if not DB_URL:return blank()
@@ -85,7 +84,7 @@ def upsert_probe(payload):
     return {'url':url,'streams':len(streams),'resources':len(resources)}
 
 @app.get('/')
-def root():return jsonify({'service':'film4k-api','ok':True,'manifest':'/film4k/manifest.json','store':'neon' if DB_URL else 'memory'})
+def root():return jsonify({'service':'film4k-api','ok':True,'manifest':'/film4k/manifest.json','store':'neon' if DB_URL else 'memory','sportsResolver':'browser-session'})
 @app.get('/health')
 def health():return jsonify({'ok':True,'service':'film4k-api','database':bool(DB_URL)})
 @app.post('/film4k/probe')
@@ -165,17 +164,6 @@ def runner_status():
         for t in STATE['runner']['tasks'].values():counts[t.get('status','queued')]=counts.get(t.get('status','queued'),0)+1
         return jsonify({'ok':True,'movies':counts,'catalogTotal':STATE['catalog'].get('total',0),'resolved':len(STATE['movies']),'probes':len(STATE['probes'])})
 
-# Preserve the VOD proxy behavior from the known-good 0.4.0 path.
-# Sports TV/HLS is different: it worked when Film4K saw a /sports referer and does not use the VOD play-ticket flow.
-_original_fetch_media = film4k_addon._fetch_media
-def _stable_fetch_media(target):
-    if '/api/tv/' in str(target):
-        headers={'User-Agent':'Mozilla/5.0','Accept':'*/*','Referer':'https://film4k.net/sports','Origin':'https://film4k.net'}
-        if request.headers.get('Range'):headers['Range']=request.headers['Range']
-        return urlopen(Request(target,headers=headers,method='GET'),timeout=20)
-    return _original_fetch_media(target)
-film4k_addon._fetch_media=_stable_fetch_media
-
 register_film4k_addon(app,load_store)
 _original_stream_view=app.view_functions.get('stream')
 
@@ -186,52 +174,43 @@ def _decode_live_sid(sid):
         b=raw[len(prefix):];b+='='*((4-len(b)%4)%4);return base64.urlsafe_b64decode(b.encode()).decode()
     except Exception:return ''
 
-def _captured_sports_streams(slug):
-    target='/api/sports/live/'+slug;found=[]
-    probes=sorted((STATE.get('probes') or {}).values(),key=lambda p:str(p.get('updatedAt') or ''),reverse=True)
-    for p in probes:
-        resources=p.get('resources') or [];active=False;local=[]
-        for r in resources:
-            u=str((r or {}).get('url') or '')
-            if '/api/sports/live/' in u:
-                if active:break
-                active=(target in u);continue
-            if active and '.m3u8' in u.lower() and '/api/tv/' in u.lower():local.append(u)
-        if local:
-            for u in local:
-                if u not in found:found.append(u)
-            break
-    return found
-
-def _patched_stream(typ,sid):
-    if _original_stream_view is not None:
-        resp=_original_stream_view(typ,sid)
-        try:
-            if (resp.get_json(silent=True) or {}).get('streams'):return resp
-        except Exception:pass
+def _browser_stream(typ,sid):
     slug=_decode_live_sid(sid)
-    if not slug:return _original_stream_view(typ,sid) if _original_stream_view else jsonify({'streams':[]})
-    base=request.host_url.rstrip('/');streams=[]
-    for i,u in enumerate(_captured_sports_streams(slug),1):
-        prox=base+'/film4k/hls?u='+quote(u,safe='')
+    if not slug:
+        return _original_stream_view(typ,sid) if _original_stream_view else jsonify({'streams':[]})
+    # Resolve every sports play request inside a real Film4K browser session. Do not reuse captured HLS URLs.
+    result=sports_browser.resolve(slug,force=True)
+    streams=[];base=request.host_url.rstrip('/')
+    session=result.get('session')
+    for i,u in enumerate(result.get('streams') or [],1):
+        prox=base+'/film4k/sports-hls?sid='+quote(session or '',safe='')+'&u='+quote(u,safe='')
         streams.append({'name':f'LIVE #{i}','title':f'Film4K Sports • LIVE #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
     return jsonify({'streams':streams})
-if _original_stream_view is not None:app.view_functions['stream']=_patched_stream
+if _original_stream_view is not None:app.view_functions['stream']=_browser_stream
 
-@app.get('/film4k/sports/stream-debug/<path:slug>')
-def sports_stream_debug(slug):
-    urls=_captured_sports_streams(slug);return jsonify({'slug':slug,'capturedCount':len(urls),'capturedUrls':urls})
-
-@app.get('/film4k/sports/live-debug/<path:slug>')
-def sports_live_debug(slug):
-    url='https://film4k.net/api/sports/live/'+quote(slug,safe='')
+@app.get('/film4k/sports-hls')
+def sports_hls():
+    sid=str(request.args.get('sid') or '');target=unquote(str(request.args.get('u') or ''))
+    if not sid or not target.startswith('https://'):return Response('bad sports session',400)
     try:
-        headers={'User-Agent':'Mozilla/5.0','Accept':'application/json','Referer':'https://film4k.net/sports','Origin':'https://film4k.net'}
-        with urlopen(Request(url,headers=headers),timeout=15) as r:
-            raw=r.read().decode('utf-8','replace')
-            try:data=json.loads(raw)
-            except Exception:data={'raw':raw[:4000]}
-            return jsonify({'ok':True,'status':getattr(r,'status',200),'data':data})
-    except Exception as e:return jsonify({'ok':False,'error':str(e)}),502
+        status,headers,body=sports_browser.fetch(sid,target,request.headers.get('Range'))
+        ct=headers.get('content-type') or 'application/octet-stream'
+        if '.m3u8' in target.lower() or 'mpegurl' in ct.lower():
+            text=body.decode('utf-8','replace')
+            body=sports_browser.rewrite_playlist(text,target,request.host_url.rstrip('/')+'/film4k/sports-hls',sid).encode('utf-8')
+            ct='application/vnd.apple.mpegurl'
+        resp=Response(body,status=status,content_type=ct)
+        for k in ['content-range','accept-ranges']:
+            if headers.get(k):resp.headers[k.title()]=headers[k]
+        resp.headers['Access-Control-Allow-Origin']='*';resp.headers['Cache-Control']='no-store'
+        return resp
+    except Exception as e:return Response('sports upstream error: '+str(e),502)
+
+@app.get('/film4k/sports/browser-debug/<path:slug>')
+def sports_browser_debug(slug):
+    r=sports_browser.resolve(slug,force=True)
+    safe={k:v for k,v in r.items() if k!='session'}
+    safe['sessionCreated']=bool(r.get('session'))
+    return jsonify(safe)
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.environ.get('PORT','10000')))
