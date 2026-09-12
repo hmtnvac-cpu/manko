@@ -15,11 +15,21 @@ async function finish(slot,msg){const s=await getState(),w=s.workers?.[slot];if(
 
 async function poll(){if(polling)return;polling=true;try{let s=await getState();if(s.paused)return;for(let i=0;i<WORKERS;i++){s=await getState();if(s.paused||s.workers[i])continue;const r=await api('/runner/next');const task=r.data?.task;if(!r.ok||!task?.movieUrl)break;try{const tab=await chrome.tabs.create({url:task.movieUrl,active:false});s=await getState();s.workers[i]={taskId:task.id,movieUrl:task.movieUrl,tabId:tab.id,startedAt:Date.now()};await setState(s)}catch(e){await api('/runner/fail',{method:'POST',body:JSON.stringify({taskId:task.id,movieUrl:task.movieUrl,error:String(e)})})}}}finally{polling=false}}
 
+async function scanActiveTab(){
+  try{
+    const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+    if(!tab?.id)return{ok:false,error:'Không tìm thấy tab đang mở'};
+    const result=await chrome.tabs.sendMessage(tab.id,{type:'FILM4K_SCAN_NOW'});
+    return result||{ok:false,error:'Không nhận được kết quả quét'};
+  }catch(e){return{ok:false,error:String(e)}}
+}
+
 chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{(async()=>{
   if(msg.type==='RUNNER_STATUS'){sendResponse({ok:true,state:await getState()});return}
   if(msg.type==='RUNNER_PAUSE'){const s=await getState();s.paused=true;for(const w of Object.values(s.workers||{}))await closeTab(w.tabId);s.workers={};await setState(s);sendResponse({ok:true});return}
   if(msg.type==='RUNNER_RESUME'){const s=await getState();s.paused=false;s.lastError=null;await setState(s);poll();sendResponse({ok:true});return}
   if(msg.type==='RUNNER_STOP'){const s=await getState();s.paused=true;for(const w of Object.values(s.workers||{}))await closeTab(w.tabId);s.workers={};await setState(s);sendResponse({ok:true});return}
+  if(msg.type==='SCAN_ACTIVE_TAB'){sendResponse(await scanActiveTab());return}
   if(msg.type==='FILM4K_PROBE'){
     const tabId=sender.tab?.id;
     const s=await getState();
