@@ -2,12 +2,13 @@
   const seen=new Set();
   const resources=[];
   const abs=v=>{try{return new URL(v,location.href).href}catch{return''}};
-  const interesting=u=>/\.m3u8(?:$|\?)/i.test(u)||/\.mpd(?:$|\?)/i.test(u)||/\.(?:mp4|mkv|webm)(?:$|\?)/i.test(u)||/stream|playlist|manifest|episode|source|play|video|media|api|blob:/i.test(u);
+  const interesting=u=>/\.m3u8(?:$|\?)/i.test(u)||/\.mpd(?:$|\?)/i.test(u)||/\.(?:mp4|mkv|webm)(?:$|\?)/i.test(u)||/stream|playlist|episode|source|play|video|media|api|blob:/i.test(u);
   function add(url,kind='resource',extra={}){
     const u=abs(url)||String(url||'');
-    if(!u||seen.has(kind+'|'+u))return;
-    if(!interesting(u)&&kind!=='ready'&&kind!=='mediasource')return;
-    seen.add(kind+'|'+u);resources.push({url:u,kind,...extra});if(resources.length>500)resources.splice(0,resources.length-500);
+    const uniqueKey=kind+'|'+u+'|'+String(extra.requestBody||'')+'|'+String(extra.responseBody||'');
+    if(!u||seen.has(uniqueKey))return;
+    if(!interesting(u)&&kind!=='ready'&&kind!=='mediasource'&&kind!=='api-detail')return;
+    seen.add(uniqueKey);resources.push({url:u,kind,...extra});if(resources.length>500)resources.splice(0,resources.length-500);
   }
   function snapshot(){
     try{for(const e of performance.getEntriesByType('resource'))add(e.name,e.initiatorType||'resource')}catch{}
@@ -24,8 +25,8 @@
   }
   window.addEventListener('message',e=>{
     const d=e.data;if(!d||d.__film4kProbe!==true)return;
-    add(d.url||'',d.kind||'page-hook',{method:d.method||'',mime:d.mime||'',frame:d.href||location.href});
-    if(d.kind==='ready'||d.url)report();
+    add(d.url||'',d.kind||'page-hook',{method:d.method||'',mime:d.mime||'',frame:d.href||location.href,status:d.status||0,contentType:d.contentType||'',requestBody:d.requestBody||'',responseBody:d.responseBody||''});
+    if(d.kind==='ready'||d.url||d.kind==='api-detail')report();
   });
   const obs=new MutationObserver(()=>{snapshot();});
   function start(){if(!document.documentElement)return setTimeout(start,50);obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src','href']});snapshot();report();let n=0;const t=setInterval(()=>{snapshot();report();if(++n>=60){clearInterval(t);obs.disconnect()}},1000)}
