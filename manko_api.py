@@ -1,7 +1,7 @@
-import os, json, hashlib
+import os, json, hashlib, base64
 from datetime import datetime, timezone, timedelta
 from threading import RLock
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 from flask import Flask, jsonify, request
 import psycopg
 from film4k_addon import register_film4k_addon
@@ -187,5 +187,67 @@ def runner_status():
         return jsonify({'ok':True,'movies':counts,'catalogTotal':STATE['catalog'].get('total',0),'resolved':len(STATE['movies']),'probes':len(STATE['probes'])})
 
 register_film4k_addon(app,load_store)
+
+# Sports resolver fallback: preserve addon logic first, then use the exact request order
+# captured by Film4K Collector. A /api/sports/live/<slug> request is followed by the
+# /api/tv/.../index.m3u8 requests used by that same event in the browser.
+_original_stream_view = app.view_functions.get('stream')
+
+def _decode_live_sid(sid):
+    raw=str(sid or '').split(':',1)[0]
+    prefix='film4k_live_'
+    if not raw.startswith(prefix):return ''
+    try:
+        b=raw[len(prefix):];b+='='*((4-len(b)%4)%4)
+        return base64.urlsafe_b64decode(b.encode()).decode()
+    except Exception:return ''
+
+def _captured_sports_streams(slug):
+    target='/api/sports/live/'+slug
+    found=[]
+    probes=sorted((STATE.get('probes') or {}).values(),key=lambda p:str(p.get('updatedAt') or ''),reverse=True)
+    for p in probes:
+        resources=p.get('resources') or []
+        active=False
+        local=[]
+        for r in resources:
+            u=str((r or {}).get('url') or '')
+            if '/api/sports/live/' in u:
+                if active:break
+                active=(target in u)
+                continue
+            if not active:continue
+            low=u.lower()
+            if '.m3u8' in low and ('/api/tv/' in low or 'film4k.net/' in low):local.append(u)
+        if local:
+            for u in local:
+                if u not in found:found.append(u)
+            break
+    return found
+
+def _patched_stream(typ,sid):
+    if _original_stream_view is not None:
+        resp=_original_stream_view(typ,sid)
+        try:
+            data=resp.get_json(silent=True) or {}
+            if data.get('streams'):return resp
+        except Exception:pass
+    slug=_decode_live_sid(sid)
+    if not slug:
+        return _original_stream_view(typ,sid) if _original_stream_view is not None else jsonify({'streams':[]})
+    base=request.host_url.rstrip('/')
+    streams=[]
+    for i,u in enumerate(_captured_sports_streams(slug),1):
+        prox=base+'/film4k/hls?u='+quote(u,safe='')
+        streams.append({'name':f'LIVE #{i}','title':f'Film4K Sports • LIVE #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
+    return jsonify({'streams':streams})
+
+if _original_stream_view is not None:
+    app.view_functions['stream']=_patched_stream
+
+@app.get('/film4k/sports/stream-debug/<path:slug>')
+def sports_stream_debug(slug):
+    urls=_captured_sports_streams(slug)
+    return jsonify({'slug':slug,'count':len(urls),'urls':urls})
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.environ.get('PORT','10000')))
