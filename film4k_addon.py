@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, unquote_plus, urlparse, quote, unquote, urljo
 from urllib.request import Request, urlopen, build_opener, HTTPCookieProcessor
 
 BASE='https://film4k.net'; VN_TZ=timezone(timedelta(hours=7)); _CACHE={}
-MANIFEST={'id':'community.film4k.addon','version':'0.5.6','name':'Film4K','description':'Film4K.net movies, series and sports','resources':['catalog','meta','stream'],'types':['movie','series'],'idPrefixes':['film4k_'],'catalogs':[{'type':'movie','id':'film4k_sports','name':'🏟️ FILM4K • SPORTS','extra':[{'name':'skip','isRequired':False}]},{'type':'movie','id':'film4k_movies','name':'🎬 FILM4K • MOVIES','extra':[{'name':'skip','isRequired':False},{'name':'search','isRequired':False}]},{'type':'series','id':'film4k_series','name':'📺 FILM4K • SERIES','extra':[{'name':'skip','isRequired':False},{'name':'search','isRequired':False}]}]}
+MANIFEST={'id':'community.film4k.addon','version':'0.5.7','name':'Film4K','description':'Film4K.net movies, series and sports','resources':['catalog','meta','stream'],'types':['movie','series'],'idPrefixes':['film4k_'],'catalogs':[{'type':'movie','id':'film4k_test','name':'🧪 FILM4K • FURIE TEST','extra':[]},{'type':'movie','id':'film4k_sports','name':'🏟️ FILM4K • SPORTS','extra':[{'name':'skip','isRequired':False}]},{'type':'movie','id':'film4k_movies','name':'🎬 FILM4K • MOVIES','extra':[{'name':'skip','isRequired':False},{'name':'search','isRequired':False}]},{'type':'series','id':'film4k_series','name':'📺 FILM4K • SERIES','extra':[{'name':'skip','isRequired':False},{'name':'search','isRequired':False}]}]}
 
 def _extra(x):
     if not x:return {}
@@ -195,6 +195,12 @@ def register_film4k_addon(app,load_store):
             if m and m.get('type')==typ:metas.append(m)
         if q:metas=[m for m in metas if q in (m.get('name','')+' '+m.get('description','')).lower()]
         return jsonify({'metas':metas[skip:skip+40]})
+    @app.get('/film4k/catalog/movie/film4k_test.json')
+    def test_movie():
+        m=_detail_meta('furie')
+        if not m:m={'id':_sid('furie'),'type':'movie','name':'Furie','poster':None,'posterShape':'poster','description':'Film4K test movie','website':BASE+'/watch/furie'}
+        else:m['type']='movie'
+        return jsonify({'metas':[m]})
     @app.get('/film4k/catalog/movie/film4k_movies.json')
     @app.get('/film4k/catalog/movie/film4k_movies/<path:extra>.json')
     def movies(extra=None):return cat('movie',extra)
