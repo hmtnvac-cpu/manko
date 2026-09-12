@@ -1,27 +1,35 @@
-const RUNNER_API='https://manko-api.onrender.com';
-const RUNNER_WORKERS=2;
-const RUNNER_POLL_ALARM='manko_runner_poll';
-const RUNNER_STATE='manko_final_runner_state';
-let RF_POLLING=false;
+const API='https://manko-api.onrender.com';
+const STATE_KEY='film4k_runner_state';
+const ALARM='film4k_runner_poll';
+const WORKERS=2;
+let polling=false;
 
-async function rfGet(){const r=await chrome.storage.local.get(RUNNER_STATE);return r[RUNNER_STATE]||{workers:{},discovery:null,paused:false,errorStreak:0,lastError:null}}
-async function rfSet(s){await chrome.storage.local.set({[RUNNER_STATE]:s})}
-async function rfJson(path,opt={}){try{const r=await fetch(RUNNER_API+path,{cache:'no-store',...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}return{ok:r.ok,status:r.status,data:j,text:t}}catch(e){return{ok:false,error:String(e)}}}
-async function rfClose(id){if(id)try{await chrome.tabs.remove(id)}catch{}}
-async function rfCloseJob(job){await rfClose(job?.movieTabId);await rfClose(job?.playerTabId)}
-async function rfCloseAllTracked(){const s=await rfGet();for(const w of Object.values(s.workers||{}))await rfCloseJob(w);if(s.discovery?.tabId)await rfClose(s.discovery.tabId);s.workers={};s.discovery=null;await rfSet(s)}
-async function rfRecordError(err){const s=await rfGet();s.errorStreak=(s.errorStreak||0)+1;s.lastError=String(err||'Unknown error');if(s.errorStreak>=5){s.paused=true;for(const w of Object.values(s.workers||{}))await rfCloseJob(w);if(s.discovery?.tabId)await rfClose(s.discovery.tabId);s.workers={};s.discovery=null}await rfSet(s);return s}
-async function rfClearError(){const s=await rfGet();if(s.errorStreak||s.lastError){s.errorStreak=0;s.lastError=null;await rfSet(s)}}
-async function rfFail(slot,error){const s=await rfGet(),w=s.workers?.[slot];if(!w)return;await rfCloseJob(w);delete s.workers[slot];await rfSet(s);await rfJson('/runner/fail',{method:'POST',body:JSON.stringify({taskId:w.taskId,movieUrl:w.movieUrl,error:String(error||'runner failed')})});const ns=await rfRecordError(error);if(!ns.paused)setTimeout(rfPoll,800)}
-async function rfFinish(slot,payload){const s=await rfGet(),w=s.workers?.[slot];if(!w)return;const r=await rfJson('/runner/result',{method:'POST',body:JSON.stringify({taskId:w.taskId,movieUrl:w.movieUrl,...payload})});if(r.ok&&r.data?.ok){await rfCloseJob(w);delete s.workers[slot];s.errorStreak=0;s.lastError=null;await rfSet(s);setTimeout(rfPoll,250)}else await rfFail(slot,r.error||r.text||'result rejected')}
-async function rfOpenDiscovery(){const s=await rfGet();if(s.paused||s.discovery)return;const r=await rfJson('/runner/discovery/next');if(!r.ok){await rfRecordError(r.error||r.text||'discovery next failed');return}const task=r.data?.task;if(!task?.url)return;try{const t=await chrome.tabs.create({url:task.url,active:false});const n=await rfGet();if(n.paused){await rfClose(t.id);return}n.discovery={taskId:task.id,url:task.url,tabId:t.id,startedAt:Date.now()};await rfSet(n)}catch(e){await rfJson('/runner/discovery/fail',{method:'POST',body:JSON.stringify({url:task.url,error:String(e)})});await rfRecordError(e)}}
-async function rfPoll(){if(RF_POLLING)return;RF_POLLING=true;try{let s=await rfGet();if(s.paused)return;for(let i=0;i<RUNNER_WORKERS;i++){s=await rfGet();if(s.paused)break;if(s.workers[i])continue;const r=await rfJson('/runner/next');if(!r.ok){await rfRecordError(r.error||r.text||'runner next failed');break}const task=r.data?.task;if(!task?.id||!task?.movieUrl)break;try{const t=await chrome.tabs.create({url:task.movieUrl,active:false});s=await rfGet();if(s.paused){await rfClose(t.id);break}s.workers[i]={slot:i,taskId:task.id,movieUrl:task.movieUrl,movieTabId:t.id,playerTabId:null,startedAt:Date.now()};await rfSet(s)}catch(e){await rfJson('/runner/fail',{method:'POST',body:JSON.stringify({taskId:task.id,movieUrl:task.movieUrl,error:String(e)})});await rfRecordError(e);break}}await rfOpenDiscovery()}finally{RF_POLLING=false}}
-async function rfScrapeDiscovery(d){try{const r=await chrome.scripting.executeScript({target:{tabId:d.tabId},func:async()=>{const wait=ms=>new Promise(r=>setTimeout(r,ms));const abs=h=>{try{return new URL(h,location.href).href}catch{return null}};for(let i=0;i<8;i++){window.scrollTo(0,document.body.scrollHeight);await wait(250)}const movies=[],lists=[],sm=new Set(),sl=new Set();for(const a of document.querySelectorAll('a[href]')){const u=abs(a.href||a.getAttribute('href'));if(!u)continue;if(u.startsWith('https://manko.fun/movie-info/')&&!sm.has(u)){sm.add(u);movies.push(u)}try{const U=new URL(u);if(U.origin==='https://manko.fun'&&(U.pathname==='/home'||U.pathname.includes('movie-list')||U.pathname.includes('cate-list'))&&!sl.has(u)){sl.add(u);lists.push(u)}}catch{}}return{url:location.href,movies,lists}}});return r?.[0]?.result}catch{return null}}
-async function rfHandleDiscoveryLoaded(tabId){const s=await rfGet(),d=s.discovery;if(s.paused||!d||d.tabId!==tabId)return;const data=await rfScrapeDiscovery(d);if(data){const r=await rfJson('/runner/discovery/result',{method:'POST',body:JSON.stringify({url:d.url,movies:data.movies||[],lists:data.lists||[]})});if(r.ok)await rfClearError();else await rfRecordError(r.error||r.text||'discovery result failed')}else{await rfJson('/runner/discovery/fail',{method:'POST',body:JSON.stringify({url:d.url,error:'scrape failed'})});await rfRecordError('discovery scrape failed')}await rfClose(d.tabId);const n=await rfGet();if(n.discovery?.tabId===tabId)n.discovery=null;await rfSet(n);if(!n.paused)setTimeout(rfPoll,300)}
-chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete')rfHandleDiscoveryLoaded(tabId)});
-chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{(async()=>{if(msg.type==='RUNNER_STATUS'){const s=await rfGet();sendResponse({ok:true,state:s});return}if(msg.type==='RUNNER_PAUSE'){const s=await rfGet();s.paused=true;await rfSet(s);await rfCloseAllTracked();sendResponse({ok:true});return}if(msg.type==='RUNNER_RESUME'){const s=await rfGet();s.paused=false;s.errorStreak=0;s.lastError=null;await rfSet(s);rfPoll();sendResponse({ok:true});return}if(msg.type==='RUNNER_STOP'){const s=await rfGet();s.paused=true;s.errorStreak=0;s.lastError='Stopped by user';await rfSet(s);await rfCloseAllTracked();sendResponse({ok:true});return}
-const s=await rfGet();if(s.paused)return;const tabId=sender.tab?.id;if(msg.type==='MANKO_PLAYER_FOUND'){const ent=Object.entries(s.workers||{}).find(([,w])=>w?.movieTabId===tabId);if(!ent)return;const slot=Number(ent[0]),w=ent[1];const player=msg.playerUrl||(msg.playerUrls||[])[0];if(!player)return rfFail(slot,'No javplayer embed');try{const t=await chrome.tabs.create({url:player,active:false});const n=await rfGet();if(n.paused){await rfClose(t.id);return}w.playerTabId=t.id;w.page={movieId:msg.movieId,title:msg.title,poster:msg.poster,metadata:msg.metadata||{}};n.workers[slot]=w;await rfSet(n);sendResponse({ok:true})}catch(e){await rfFail(slot,e)}return}if(msg.type==='JAVPLAYER_RESULT'){const ent=Object.entries(s.workers||{}).find(([,w])=>w?.playerTabId===tabId);if(!ent)return;const slot=Number(ent[0]),w=ent[1];if(msg.ok&&msg.streamUrl)return rfFinish(slot,{ok:true,page:w.page||{},stream:{url:msg.streamUrl,vttUrl:msg.vttUrl||null,headers:msg.headers||{Referer:'https://javplayer.cc/'},playerId:msg.playerId,playerUrl:msg.playerUrl}});return rfFail(slot,msg.error||'Javplayer failed')}if(msg.type==='MANKO_PAGE_ERROR'){const ent=Object.entries(s.workers||{}).find(([,w])=>w?.movieTabId===tabId);if(ent)return rfFail(Number(ent[0]),msg.error||'Manko page error')}})();return true});
-chrome.alarms.onAlarm.addListener(a=>{if(a.name===RUNNER_POLL_ALARM)rfPoll()});
-async function rfBoot(resetServer=false){const s=await rfGet();for(const w of Object.values(s.workers||{}))await rfCloseJob(w);if(s.discovery?.tabId)await rfClose(s.discovery.tabId);s.workers={};s.discovery=null;if(typeof s.paused!=='boolean')s.paused=false;await rfSet(s);if(resetServer&&!s.paused)await rfJson('/runner/start',{method:'POST',body:'{}'});chrome.alarms.create(RUNNER_POLL_ALARM,{periodInMinutes:0.1});if(!s.paused)rfPoll()}
-chrome.runtime.onInstalled.addListener(()=>rfBoot(true));
-chrome.runtime.onStartup.addListener(()=>rfBoot(false));
+async function getState(){const r=await chrome.storage.local.get(STATE_KEY);return r[STATE_KEY]||{workers:{},paused:false,lastError:null}}
+async function setState(s){await chrome.storage.local.set({[STATE_KEY]:s})}
+async function api(path,opt={}){try{const r=await fetch(API+path,{cache:'no-store',...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let data=null;try{data=JSON.parse(t)}catch{}return{ok:r.ok,status:r.status,data,text:t}}catch(e){return{ok:false,error:String(e)}}}
+async function closeTab(id){if(id)try{await chrome.tabs.remove(id)}catch{}}
+
+async function fail(slot,error){const s=await getState(),w=s.workers?.[slot];if(!w)return;await closeTab(w.tabId);delete s.workers[slot];s.lastError=String(error||'failed');await setState(s);await api('/runner/fail',{method:'POST',body:JSON.stringify({taskId:w.taskId,movieUrl:w.movieUrl,error:s.lastError})});setTimeout(poll,500)}
+
+async function finish(slot,msg){const s=await getState(),w=s.workers?.[slot];if(!w)return;const r=await api('/runner/result',{method:'POST',body:JSON.stringify({taskId:w.taskId,movieUrl:w.movieUrl,meta:msg.meta||{},resources:msg.resources||[]})});if(r.ok){await closeTab(w.tabId);delete s.workers[slot];s.lastError=null;await setState(s);setTimeout(poll,250)}else await fail(slot,r.error||r.text||'result rejected')}
+
+async function poll(){if(polling)return;polling=true;try{let s=await getState();if(s.paused)return;for(let i=0;i<WORKERS;i++){s=await getState();if(s.paused||s.workers[i])continue;const r=await api('/runner/next');const task=r.data?.task;if(!r.ok||!task?.movieUrl)break;try{const tab=await chrome.tabs.create({url:task.movieUrl,active:false});s=await getState();s.workers[i]={taskId:task.id,movieUrl:task.movieUrl,tabId:tab.id,startedAt:Date.now()};await setState(s)}catch(e){await api('/runner/fail',{method:'POST',body:JSON.stringify({taskId:task.id,movieUrl:task.movieUrl,error:String(e)})})}}}finally{polling=false}}
+
+chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{(async()=>{
+  if(msg.type==='RUNNER_STATUS'){sendResponse({ok:true,state:await getState()});return}
+  if(msg.type==='RUNNER_PAUSE'){const s=await getState();s.paused=true;for(const w of Object.values(s.workers||{}))await closeTab(w.tabId);s.workers={};await setState(s);sendResponse({ok:true});return}
+  if(msg.type==='RUNNER_RESUME'){const s=await getState();s.paused=false;s.lastError=null;await setState(s);poll();sendResponse({ok:true});return}
+  if(msg.type==='RUNNER_STOP'){const s=await getState();s.paused=true;for(const w of Object.values(s.workers||{}))await closeTab(w.tabId);s.workers={};await setState(s);sendResponse({ok:true});return}
+  if(msg.type==='FILM4K_PROBE'){
+    const tabId=sender.tab?.id;
+    const s=await getState();
+    const ent=Object.entries(s.workers||{}).find(([,w])=>w?.tabId===tabId);
+    if(ent){await finish(Number(ent[0]),msg);sendResponse({ok:true,runner:true});return}
+    const r=await api('/film4k/probe',{method:'POST',body:JSON.stringify(msg)});sendResponse({ok:r.ok,data:r.data});return;
+  }
+})();return true});
+
+chrome.alarms.onAlarm.addListener(a=>{if(a.name===ALARM)poll()});
+async function boot(){const s=await getState();s.workers={};if(typeof s.paused!=='boolean')s.paused=false;await setState(s);chrome.alarms.create(ALARM,{periodInMinutes:0.1});if(!s.paused){await api('/runner/start',{method:'POST',body:'{}'});poll()}}
+chrome.runtime.onInstalled.addListener(boot);
+chrome.runtime.onStartup.addListener(boot);
