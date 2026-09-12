@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Film4K Collector",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "description": "Deep Film4K.net collector for catalog, player, API and stream discovery.",
   "permissions": ["tabs", "storage", "scripting", "alarms"],
   "host_permissions": [
