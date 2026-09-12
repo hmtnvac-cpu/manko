@@ -3,11 +3,11 @@
   window.__FILM4K_DEEP_PROBE__ = true;
   const emit=(kind,data={})=>{try{window.postMessage({__film4kProbe:true,kind,href:location.href,ts:Date.now(),...data},'*')}catch{}};
   const interesting=u=>/\.m3u8(?:$|\?)/i.test(u)||/\.mpd(?:$|\?)/i.test(u)||/\.(?:mp4|mkv|webm)(?:$|\?)/i.test(u)||/stream|playlist|episode|source|play|video|media|api/i.test(u);
-  const targetApi=u=>/\/api\/(?:watch(?:\/|$)|play-ticket(?:$|\?)|home(?:$|\?)|explore(?:$|\?)|movies(?:$|\?)|series(?:$|\?)|search(?:$|\?))/i.test(String(u||''));
+  const targetApi=u=>/\/api\/(?:watch(?:\/|$)|play-ticket(?:$|\?)|home(?:$|\?)|explore(?:$|\?)|movies(?:$|\?)|series(?:$|\?)|search(?:$|\?)|sports(?:\/|$)|tv(?:\/|$))/i.test(String(u||''));
   const targetMedia=u=>/\.m3u8(?:$|\?)/i.test(String(u||''))||/\.mpd(?:$|\?)/i.test(String(u||''));
   const clip=v=>{try{return typeof v==='string'?v.slice(0,500000):JSON.stringify(v).slice(0,500000)}catch{return String(v||'').slice(0,500000)}};
   const headerObj=h=>{const o={};try{if(h instanceof Headers){h.forEach((v,k)=>o[k]=v)}else if(Array.isArray(h)){for(const [k,v] of h)o[k]=String(v)}else if(h&&typeof h==='object'){for(const [k,v] of Object.entries(h))o[k]=String(v)}}catch{}return o};
-  const scanText=(text,kind='body')=>{if(typeof text!=='string'||!text)return;const matches=text.match(/https?:\/\/[^\s"'<>\\]+/g)||[];for(const raw of matches.slice(0,200))if(interesting(raw))emit(kind,{url:raw})};
+  const scanText=(text,kind='body')=>{if(typeof text!=='string'||!text)return;const matches=text.match(/https?:\/\/[^\s"'<>\\]+/g)||[];for(const raw of matches.slice(0,300))if(interesting(raw))emit(kind,{url:raw})};
   try{
     const ofetch=window.fetch;
     window.fetch=async function(input,init={}){
@@ -40,5 +40,5 @@
   try{const oc=URL.createObjectURL;URL.createObjectURL=function(obj){const u=oc.apply(this,arguments);emit('blob',{url:u,objType:obj?.constructor?.name||''});return u}}catch{}
   try{const oadd=MediaSource.prototype.addSourceBuffer;MediaSource.prototype.addSourceBuffer=function(mime){emit('mediasource',{mime});return oadd.apply(this,arguments)}}catch{}
   try{const d=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');if(d?.set)Object.defineProperty(HTMLMediaElement.prototype,'src',{set(v){emit('media-src',{url:v});return d.set.call(this,v)},get:d.get,configurable:true})}catch{}
-  emit('ready',{title:document.title||'',probeVersion:'4.2.2'});
+  emit('ready',{title:document.title||'',probeVersion:'4.2.3'});
 })();
