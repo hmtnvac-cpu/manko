@@ -5,7 +5,7 @@ from urllib.parse import urlparse, quote, unquote
 from flask import Flask, jsonify, request, Response
 import psycopg
 from film4k_addon import register_film4k_addon
-import film4k_browser_resolver as sports_browser
+import film4k_browser_resolver as browser_resolver
 
 app = Flask(__name__)
 DB_URL = os.environ.get('DATABASE_URL','').strip()
@@ -84,7 +84,7 @@ def upsert_probe(payload):
     return {'url':url,'streams':len(streams),'resources':len(resources)}
 
 @app.get('/')
-def root():return jsonify({'service':'film4k-api','ok':True,'manifest':'/film4k/manifest.json','store':'neon' if DB_URL else 'memory','sportsResolver':'browser-session'})
+def root():return jsonify({'service':'film4k-api','ok':True,'manifest':'/film4k/manifest.json','store':'neon' if DB_URL else 'memory','sportsResolver':'browser-session','vodResolver':'browser-working-hls'})
 @app.get('/health')
 def health():return jsonify({'ok':True,'service':'film4k-api','database':bool(DB_URL)})
 @app.post('/film4k/probe')
@@ -167,50 +167,67 @@ def runner_status():
 register_film4k_addon(app,load_store)
 _original_stream_view=app.view_functions.get('stream')
 
-def _decode_live_sid(sid):
-    raw=str(sid or '').split(':',1)[0];prefix='film4k_live_'
+def _decode_prefixed_sid(sid,prefix):
+    raw=str(sid or '').split(':',1)[0]
     if not raw.startswith(prefix):return ''
     try:
         b=raw[len(prefix):];b+='='*((4-len(b)%4)%4);return base64.urlsafe_b64decode(b.encode()).decode()
     except Exception:return ''
 
+def _decode_live_sid(sid):return _decode_prefixed_sid(sid,'film4k_live_')
+def _decode_vod_sid(sid):return _decode_prefixed_sid(sid,'film4k_s_')
+
 def _browser_stream(typ,sid):
-    slug=_decode_live_sid(sid)
-    if not slug:
-        return _original_stream_view(typ,sid) if _original_stream_view else jsonify({'streams':[]})
-    # Resolve every sports play request inside a real Film4K browser session. Do not reuse captured HLS URLs.
-    result=sports_browser.resolve(slug,force=True)
-    streams=[];base=request.host_url.rstrip('/')
-    session=result.get('session')
-    for i,u in enumerate(result.get('streams') or [],1):
-        prox=base+'/film4k/sports-hls?sid='+quote(session or '',safe='')+'&u='+quote(u,safe='')
-        streams.append({'name':f'LIVE #{i}','title':f'Film4K Sports • LIVE #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
-    return jsonify({'streams':streams})
+    base=request.host_url.rstrip('/');streams=[]
+    live_slug=_decode_live_sid(sid)
+    if live_slug:
+        result=browser_resolver.resolve(live_slug,force=True);session=result.get('session')
+        for i,u in enumerate(result.get('streams') or [],1):
+            prox=base+'/film4k/browser-hls?sid='+quote(session or '',safe='')+'&u='+quote(u,safe='')
+            streams.append({'name':f'LIVE #{i}','title':f'Film4K Sports • LIVE #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
+        return jsonify({'streams':streams})
+    vod_slug=_decode_vod_sid(sid)
+    if vod_slug:
+        parts=str(sid).split(':');season=episode=None
+        if len(parts)>=3:
+            try:season=int(parts[-2]);episode=int(parts[-1])
+            except Exception:season=episode=None
+        result=browser_resolver.resolve_vod(vod_slug,season,episode,force=True);session=result.get('session')
+        for i,u in enumerate(result.get('streams') or [],1):
+            prox=base+'/film4k/browser-hls?sid='+quote(session or '',safe='')+'&u='+quote(u,safe='')
+            streams.append({'name':f'FILM4K #{i}','title':f'Film4K • Working HLS #{i}','url':prox,'behaviorHints':{'notWebReady':True}})
+        if streams:return jsonify({'streams':streams})
+    return _original_stream_view(typ,sid) if _original_stream_view else jsonify({'streams':[]})
 if _original_stream_view is not None:app.view_functions['stream']=_browser_stream
 
-@app.get('/film4k/sports-hls')
-def sports_hls():
+@app.get('/film4k/browser-hls')
+def browser_hls():
     sid=str(request.args.get('sid') or '');target=unquote(str(request.args.get('u') or ''))
-    if not sid or not target.startswith('https://'):return Response('bad sports session',400)
+    if not sid or not target.startswith('https://'):return Response('bad Film4K session',400)
     try:
-        status,headers,body=sports_browser.fetch(sid,target,request.headers.get('Range'))
+        status,headers,body=browser_resolver.fetch(sid,target,request.headers.get('Range'))
         ct=headers.get('content-type') or 'application/octet-stream'
         if '.m3u8' in target.lower() or 'mpegurl' in ct.lower():
             text=body.decode('utf-8','replace')
-            body=sports_browser.rewrite_playlist(text,target,request.host_url.rstrip('/')+'/film4k/sports-hls',sid).encode('utf-8')
+            body=browser_resolver.rewrite_playlist(text,target,request.host_url.rstrip('/')+'/film4k/browser-hls',sid).encode('utf-8')
             ct='application/vnd.apple.mpegurl'
         resp=Response(body,status=status,content_type=ct)
         for k in ['content-range','accept-ranges']:
             if headers.get(k):resp.headers[k.title()]=headers[k]
         resp.headers['Access-Control-Allow-Origin']='*';resp.headers['Cache-Control']='no-store'
         return resp
-    except Exception as e:return Response('sports upstream error: '+str(e),502)
+    except Exception as e:return Response('Film4K upstream error: '+str(e),502)
+
+# Backward-compatible old route used by already cached sports items.
+@app.get('/film4k/sports-hls')
+def sports_hls():return browser_hls()
 
 @app.get('/film4k/sports/browser-debug/<path:slug>')
 def sports_browser_debug(slug):
-    r=sports_browser.resolve(slug,force=True)
-    safe={k:v for k,v in r.items() if k!='session'}
-    safe['sessionCreated']=bool(r.get('session'))
-    return jsonify(safe)
+    r=browser_resolver.resolve(slug,force=True);safe={k:v for k,v in r.items() if k!='session'};safe['sessionCreated']=bool(r.get('session'));return jsonify(safe)
+
+@app.get('/film4k/vod/browser-debug/<path:slug>')
+def vod_browser_debug(slug):
+    r=browser_resolver.resolve_vod(slug,force=True);safe={k:v for k,v in r.items() if k!='session'};safe['sessionCreated']=bool(r.get('session'));return jsonify(safe)
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.environ.get('PORT','10000')))
